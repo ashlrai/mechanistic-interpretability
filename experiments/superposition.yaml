@@ -1,0 +1,8 @@
+name: superposition-smoke
+family: superposition
+backend: transformerlens
+description: Initial placeholder spec for sparse feature and residual stream superposition sweeps.
+parameters:
+  activation_site: resid_post
+  layers: [0]
+  sparsity_grid: [0.01, 0.05, 0.1]

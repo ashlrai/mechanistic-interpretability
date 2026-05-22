@@ -1,0 +1,8 @@
+name: polysemanticity-smoke
+family: polysemanticity
+backend: transformerlens
+description: Initial placeholder spec for feature selectivity and polysemantic neuron probes.
+parameters:
+  activation_site: mlp_post
+  layers: [0]
+  top_k_features: 20

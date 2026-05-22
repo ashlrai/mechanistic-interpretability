@@ -1,0 +1,75 @@
+[project]
+name = "mech-interpretability"
+version = "0.1.0"
+description = "Local, agent-driven mechanistic interpretability research platform for Apple Silicon."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Mason Wyatt" }]
+dependencies = [
+    "httpx>=0.27.0",
+    "numpy>=1.26.0",
+    "pydantic>=2.7.0",
+    "pyyaml>=6.0.1",
+    "rich>=13.7.0",
+    "typer>=0.12.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.10.0",
+    "pytest>=8.2.0",
+    "ruff>=0.5.0",
+    "types-PyYAML>=6.0.12",
+]
+notebook = [
+    "ipykernel>=6.29.0",
+    "jupyterlab>=4.2.0",
+    "matplotlib>=3.9.0",
+    "pandas>=2.2.0",
+    "plotly>=5.22.0",
+]
+
+[project.optional-dependencies]
+interp = [
+    "einops>=0.8.0",
+    "safetensors>=0.4.3",
+    "torch>=2.3.0",
+    "transformer-lens>=2.0.0",
+    "transformers>=4.42.0",
+]
+nnsight = [
+    "nnsight>=0.4.0",
+]
+apple = [
+    "mlx>=0.18.0",
+    "mlx-lm>=0.18.0",
+]
+
+[project.scripts]
+mech = "mech_interp.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mech_interp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["mlx_lm", "nnsight", "transformer_lens"]
+ignore_missing_imports = true

@@ -1,0 +1,8 @@
+name: circuit-patching-smoke
+family: circuit_patching
+backend: transformerlens
+description: Initial placeholder spec for activation patching and causal circuit localization.
+parameters:
+  source_prompt: "The Eiffel Tower is in"
+  target_prompt: "The Colosseum is in"
+  patch_sites: ["resid_pre"]

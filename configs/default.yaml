@@ -1,0 +1,27 @@
+project:
+  name: local-mech-interp
+  artifact_dir: artifacts
+  database_path: artifacts/runs.sqlite3
+
+providers:
+  ollama:
+    base_url: http://localhost:11434
+    default_model: llama3.1
+  lm_studio:
+    base_url: http://localhost:1234/v1
+    default_model: local-model
+
+backends:
+  default_instrumented: transformerlens
+  transformerlens:
+    model_name: gpt2-small
+    device: auto
+  nnsight:
+    model_name: gpt2
+  mlx:
+    model_path: null
+
+orchestration:
+  max_parallel_runs: 1
+  max_prompts_per_batch: 32
+  retain_activation_tensors: false
