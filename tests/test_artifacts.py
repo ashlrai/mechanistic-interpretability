@@ -13,4 +13,6 @@ def test_artifact_store_writes_json_and_manifest(tmp_path: Path) -> None:
     assert record.path.exists()
     assert manifest.path.exists()
     assert record.sha256
+    assert store.read_json(1, "spec.json") == {"name": "demo"}
+    assert store.read_manifest(1)["artifacts"][0]["name"] == "spec.json"
     assert json.loads(manifest.path.read_text())["artifacts"][0]["name"] == "spec.json"

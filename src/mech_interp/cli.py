@@ -8,7 +8,8 @@ from rich.table import Table
 
 from mech_interp.config import load_config
 from mech_interp.experiments import load_experiment_specs
-from mech_interp.orchestration import ExperimentRunner
+from mech_interp.orchestration import ActivationEstimate, ExperimentRunner, ResourcePolicy
+from mech_interp.providers import configured_providers
 from mech_interp.storage import ArtifactStore, SQLiteResultStore
 
 app = typer.Typer(help="Local mechanistic interpretability research platform.")
@@ -33,6 +34,33 @@ def list_experiments(directory: str = "experiments") -> None:
     table.add_column("Description")
     for spec in registry.list():
         table.add_row(spec.name, spec.family, spec.backend, spec.description)
+    console.print(table)
+
+
+@app.command("providers")
+def check_providers(
+    timeout: float = typer.Option(2.0, help="Provider request timeout in seconds."),
+) -> None:
+    """Show configured local provider endpoints and reachability."""
+    config = load_config()
+    providers = configured_providers(config, timeout=timeout)
+    table = Table(title="Configured Providers")
+    table.add_column("Provider")
+    table.add_column("Endpoint")
+    table.add_column("Reachable")
+    table.add_column("Models")
+    table.add_column("Error")
+
+    for provider in providers:
+        health = provider.health_sync()
+        table.add_row(
+            health.provider,
+            health.base_url,
+            "yes" if health.reachable else "no",
+            ", ".join(health.models) if health.models else "-",
+            health.error or "-",
+        )
+
     console.print(table)
 
 
@@ -102,3 +130,34 @@ def list_runs(limit: int = 20) -> None:
             run.status.value,
         )
     console.print(table)
+
+
+@app.command("estimate-activations")
+def estimate_activations(
+    batch_size: int = typer.Option(..., min=1),
+    sequence_length: int = typer.Option(..., min=1),
+    hidden_size: int = typer.Option(..., min=1),
+    hook_count: int = typer.Option(..., min=1),
+    dtype: str = typer.Option("float16"),
+    max_ram_gib: float = typer.Option(128.0, min=1.0),
+    max_activation_fraction: float = typer.Option(0.35, min=0.01, max=1.0),
+) -> None:
+    """Estimate activation-cache memory for a proposed experiment batch."""
+    estimate = ActivationEstimate(
+        batch_size=batch_size,
+        sequence_length=sequence_length,
+        hidden_size=hidden_size,
+        hook_count=hook_count,
+        dtype=dtype,
+    )
+    policy = ResourcePolicy(
+        max_ram_gib=max_ram_gib,
+        max_activation_fraction=max_activation_fraction,
+    )
+    policy.validate_activation_estimate(estimate)
+    console.print(
+        {
+            "estimated_gib": round(estimate.gib, 4),
+            "max_activation_gib": round(policy.max_activation_gib, 4),
+        }
+    )

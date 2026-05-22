@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import importlib
+from collections.abc import Mapping
 from typing import Any
+
+from mech_interp.types import InstrumentedModelBackend
 
 
 class OptionalDependencyError(RuntimeError):
     def __init__(self, package: str, extra: str) -> None:
-        super().__init__(f"Install optional dependency '{package}' with `uv sync --extra {extra}`.")
+        super().__init__(
+            f"Install optional dependency '{package}' with `uv sync --extra {extra}` "
+            "before running this instrumented backend."
+        )
 
 
 class TransformerLensBackend:
@@ -18,14 +25,14 @@ class TransformerLensBackend:
 
     def load(self) -> None:
         try:
-            from transformer_lens import HookedTransformer
+            transformer_lens = importlib.import_module("transformer_lens")
         except ImportError as exc:
             raise OptionalDependencyError("transformer-lens", "interp") from exc
 
         kwargs: dict[str, Any] = {}
         if self.device != "auto":
             kwargs["device"] = self.device
-        self.model = HookedTransformer.from_pretrained(self.model_name, **kwargs)
+        self.model = transformer_lens.HookedTransformer.from_pretrained(self.model_name, **kwargs)
 
     def capture_activations(self, prompts: list[str], sites: list[str]) -> dict[str, Any]:
         if self.model is None:
@@ -82,3 +89,27 @@ class MLXInstrumentedBackend:
 
     def run_intervention(self, prompt: str, interventions: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError("MLX-native interventions require custom hooks.")
+
+
+def create_instrumented_backend(
+    backend: str,
+    config: Mapping[str, Any] | None = None,
+) -> InstrumentedModelBackend:
+    config = config or {}
+    normalized = backend.replace("-", "").replace("_", "").lower()
+
+    if normalized in {"transformerlens", "tl"}:
+        return TransformerLensBackend(
+            model_name=str(config.get("model_name", "gpt2-small")),
+            device=str(config.get("device", "auto")),
+        )
+    if normalized == "nnsight":
+        return NNsightBackend(model_name=str(config.get("model_name", "gpt2")))
+    if normalized == "mlx":
+        model_path = config.get("model_path")
+        return MLXInstrumentedBackend(
+            model_path=str(model_path) if model_path is not None else None,
+        )
+
+    supported = "transformerlens, nnsight, mlx"
+    raise ValueError(f"Unknown instrumented backend '{backend}'. Supported backends: {supported}.")

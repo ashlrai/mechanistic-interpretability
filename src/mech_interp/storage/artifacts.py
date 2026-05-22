@@ -13,7 +13,7 @@ class ArtifactStore:
         self.root = Path(root)
 
     def run_dir(self, run_id: int) -> Path:
-        path = self.root / f"run-{run_id:06d}"
+        path = self._run_path(run_id)
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -28,6 +28,14 @@ class ArtifactStore:
         path = self.run_dir(run_id) / name
         path.write_text(text, encoding="utf-8")
         return self._record(name=name, path=path, media_type="text/plain")
+
+    def read_json(self, run_id: int, name: str) -> dict[str, Any]:
+        path = self._run_path(run_id) / name
+        with path.open("r", encoding="utf-8") as artifact_file:
+            payload = json.load(artifact_file)
+        if not isinstance(payload, dict):
+            raise ValueError(f"Artifact {path} did not contain a JSON object.")
+        return payload
 
     def write_manifest(self, run_id: int, records: list[ArtifactRecord]) -> ArtifactRecord:
         payload = {
@@ -44,6 +52,12 @@ class ArtifactStore:
             ],
         }
         return self.write_json(run_id, "manifest.json", payload)
+
+    def read_manifest(self, run_id: int) -> dict[str, Any]:
+        return self.read_json(run_id, "manifest.json")
+
+    def _run_path(self, run_id: int) -> Path:
+        return self.root / f"run-{run_id:06d}"
 
     def _record(self, name: str, path: Path, media_type: str) -> ArtifactRecord:
         content = path.read_bytes()

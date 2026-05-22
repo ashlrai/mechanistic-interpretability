@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from mech_interp.experiments.base import Experiment
 from mech_interp.experiments.placeholder import SpecValidationExperiment
+from mech_interp.experiments.transformerlens_smoke import TransformerLensSmokeExperiment
 from mech_interp.storage import ArtifactStore, SQLiteResultStore
 from mech_interp.types import ExperimentResult, ExperimentSpec, RunStatus
 
@@ -29,7 +31,7 @@ class ExperimentRunner:
         ]
 
         try:
-            experiment = SpecValidationExperiment(spec.family)
+            experiment = experiment_for_spec(spec)
             result = experiment.run(spec, run)
         except Exception as exc:
             result = ExperimentResult(
@@ -70,3 +72,9 @@ def result_to_row(result: ExperimentResult) -> dict[str, object]:
     row = asdict(result)
     row["status"] = result.status.value
     return row
+
+
+def experiment_for_spec(spec: ExperimentSpec) -> Experiment:
+    if spec.parameters.get("runner") == "transformerlens_smoke":
+        return TransformerLensSmokeExperiment()
+    return SpecValidationExperiment(spec.family)

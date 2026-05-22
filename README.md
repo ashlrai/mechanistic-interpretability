@@ -32,7 +32,8 @@ There are two different kinds of local model access:
 
 Core packages:
 
-- `mech_interp.backends`: adapters for instrumented models and generation providers.
+- `mech_interp.backends`: adapters for instrumented models.
+- `mech_interp.providers`: adapters for black-box local generation providers.
 - `mech_interp.experiments`: experiment specs, registry, and initial experiment families.
 - `mech_interp.orchestration`: run planning and resource policy for local batches.
 - `mech_interp.storage`: SQLite run metadata plus filesystem artifact locations.
@@ -100,12 +101,36 @@ weights directly.
 
 ```bash
 uv run --group dev python -m pytest
+uv run --group dev ruff check .
+uv run --group dev mypy src tests
+```
+
+Or run the local check script:
+
+```bash
+bash scripts/check.sh
 ```
 
 List registered experiment families:
 
 ```bash
 uv run --group dev mech experiments
+```
+
+Check local provider reachability:
+
+```bash
+uv run --group dev mech providers --timeout 2
+```
+
+Estimate activation-cache memory for a planned batch:
+
+```bash
+uv run --group dev mech estimate-activations \
+  --batch-size 4 \
+  --sequence-length 128 \
+  --hidden-size 768 \
+  --hook-count 12
 ```
 
 Initialize the local result store:
@@ -131,6 +156,27 @@ List recent experiment runs:
 ```bash
 uv run --group dev mech runs
 ```
+
+Or run the local smoke script:
+
+```bash
+bash scripts/smoke.sh
+```
+
+## Current Execution Flow
+
+The current runner is intentionally lightweight. It validates and persists experiment specs, creates
+SQLite run records, writes per-run artifacts, and records placeholder metrics. That gives the
+project a stable execution spine before model-backed TransformerLens experiments are enabled.
+
+```text
+YAML spec -> registry -> runner -> SQLite run -> per-run artifacts -> SQLite result
+```
+
+Specs can opt into the TransformerLens smoke runner by setting `parameters.runner` to
+`transformerlens_smoke`. That path captures selected activation sites when the optional
+TransformerLens dependencies are installed, and ordinary tests use fakes so CI never downloads
+models.
 
 ## Experiment Roadmap
 
