@@ -1,8 +1,13 @@
+import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from mech_interp import cli
+from mech_interp.config.loader import AppConfig, ProjectConfig
+from mech_interp.storage import ArtifactStore, SQLiteResultStore
+from mech_interp.types import ExperimentResult, ExperimentSpec, RunStatus
 
 
 def test_validate_command_accepts_default_experiments() -> None:
@@ -29,3 +34,75 @@ backend: transformerlens
     assert "Invalid experiment specs" in result.output
     assert "bad.yaml" in result.output
     assert "unsupported family 'nope'" in result.output
+
+
+def test_inspect_run_prints_run_bundle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, run_id = _create_temp_run(tmp_path)
+    monkeypatch.setattr(cli, "load_config", lambda: config)
+
+    result = CliRunner().invoke(cli.app, ["inspect-run", str(run_id)])
+
+    assert result.exit_code == 0
+    assert '"run_id": 1' in result.output
+    assert '"name": "demo"' in result.output
+    assert '"accuracy": 0.75' in result.output
+    assert '"manifest"' in result.output
+    assert '"result.json"' in result.output
+
+
+def test_export_run_writes_json_bundle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, run_id = _create_temp_run(tmp_path)
+    output = tmp_path / "bundle.json"
+    monkeypatch.setattr(cli, "load_config", lambda: config)
+
+    result = CliRunner().invoke(cli.app, ["export-run", str(run_id), "--output", str(output)])
+
+    assert result.exit_code == 0
+    bundle = json.loads(output.read_text(encoding="utf-8"))
+    assert bundle["run_id"] == run_id
+    assert bundle["spec"]["name"] == "demo"
+    assert bundle["result"]["metrics"] == {"accuracy": 0.75}
+    assert bundle["manifest"]["artifacts"][0]["name"] == "result.json"
+
+
+def _create_temp_run(tmp_path: Path) -> tuple[AppConfig, int]:
+    artifact_dir = tmp_path / "artifacts"
+    database_path = tmp_path / "runs.sqlite3"
+    config = AppConfig(
+        project=ProjectConfig(
+            artifact_dir=artifact_dir,
+            database_path=database_path,
+        )
+    )
+    store = SQLiteResultStore(
+        database_path,
+        artifact_dir,
+        resolved_config={"project": {"artifact_dir": str(artifact_dir)}},
+    )
+    run = store.create_run(
+        ExperimentSpec(
+            name="demo",
+            family="polysemanticity",
+            backend="transformerlens",
+            parameters={"layers": [0]},
+        )
+    )
+    artifact_store = ArtifactStore(artifact_dir)
+    result_record = artifact_store.write_json(run.id, "result.json", {"ok": True})
+    manifest = artifact_store.write_manifest(run.id, [result_record])
+    store.save_result(
+        ExperimentResult(
+            run_id=run.id,
+            status=RunStatus.SUCCEEDED,
+            metrics={"accuracy": 0.75},
+            artifacts={"manifest": str(manifest.path)},
+            notes="completed",
+        )
+    )
+    return config, run.id

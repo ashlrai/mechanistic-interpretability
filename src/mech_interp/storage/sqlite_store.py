@@ -3,12 +3,31 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Mapping
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 
 from mech_interp.types import ExperimentResult, ExperimentRun, ExperimentSpec, RunStatus, utc_now
+
+
+class QueueStatus(StrEnum):
+    PLANNED = "planned"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class ExperimentQueueItem:
+    id: int
+    spec_name: str
+    status: QueueStatus
+    retry_count: int
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class SQLiteResultStore:
@@ -50,6 +69,19 @@ class SQLiteResultStore:
                     artifacts_json TEXT NOT NULL,
                     notes TEXT NOT NULL,
                     FOREIGN KEY(run_id) REFERENCES runs(id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS experiment_queue (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    spec_name TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL,
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 )
                 """
             )
@@ -167,6 +199,84 @@ class SQLiteResultStore:
             row = self._get_run_row(connection, run_id)
         return self._run_from_row(row)
 
+    def enqueue_experiment_specs(self, specs: list[ExperimentSpec]) -> int:
+        self.initialize()
+        now = utc_now().isoformat()
+        with self._connect() as connection:
+            before = connection.total_changes
+            connection.executemany(
+                """
+                INSERT OR IGNORE INTO experiment_queue (
+                    spec_name,
+                    status,
+                    retry_count,
+                    error,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, 0, NULL, ?, ?)
+                """,
+                [
+                    (spec.name, QueueStatus.PLANNED.value, now, now)
+                    for spec in specs
+                ],
+            )
+            return connection.total_changes - before
+
+    def claim_next_queue_item(self) -> ExperimentQueueItem | None:
+        self.initialize()
+        now = utc_now().isoformat()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT id, spec_name, status, retry_count, error, created_at, updated_at
+                FROM experiment_queue
+                WHERE status IN (?, ?)
+                ORDER BY retry_count ASC, id ASC
+                LIMIT 1
+                """,
+                (QueueStatus.PLANNED.value, QueueStatus.FAILED.value),
+            ).fetchone()
+            if row is None:
+                return None
+            queue_id = int(row[0])
+            connection.execute(
+                """
+                UPDATE experiment_queue
+                SET status = ?, error = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (QueueStatus.RUNNING.value, now, queue_id),
+            )
+            updated = connection.execute(
+                """
+                SELECT id, spec_name, status, retry_count, error, created_at, updated_at
+                FROM experiment_queue
+                WHERE id = ?
+                """,
+                (queue_id,),
+            ).fetchone()
+        return self._queue_item_from_row(cast(tuple[Any, ...], updated))
+
+    def mark_queue_item_succeeded(self, spec_name: str) -> ExperimentQueueItem:
+        return self._mark_queue_item(spec_name, QueueStatus.SUCCEEDED, error=None)
+
+    def mark_queue_item_failed(self, spec_name: str, error: str) -> ExperimentQueueItem:
+        return self._mark_queue_item(spec_name, QueueStatus.FAILED, error=error)
+
+    def list_queue_items(self) -> list[ExperimentQueueItem]:
+        self.initialize()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, spec_name, status, retry_count, error, created_at, updated_at
+                FROM experiment_queue
+                ORDER BY id ASC
+                """
+            ).fetchall()
+        return [self._queue_item_from_row(cast(tuple[Any, ...], row)) for row in rows]
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path)
         connection.execute("PRAGMA foreign_keys = ON")
@@ -181,6 +291,19 @@ class SQLiteResultStore:
             connection.execute("ALTER TABLE runs ADD COLUMN spec_json TEXT NOT NULL DEFAULT '{}'")
         if "config_json" not in columns:
             connection.execute("ALTER TABLE runs ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'")
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS experiment_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                spec_name TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
 
     def _transition_status(
         self,
@@ -240,6 +363,49 @@ class SQLiteResultStore:
             raise KeyError(f"Run {run_id} does not exist.")
         return cast(tuple[Any, ...], row)
 
+    def _mark_queue_item(
+        self,
+        spec_name: str,
+        status: QueueStatus,
+        error: str | None,
+    ) -> ExperimentQueueItem:
+        self.initialize()
+        now = utc_now().isoformat()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT id, status FROM experiment_queue WHERE spec_name = ?",
+                (spec_name,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Queue item for spec '{spec_name}' does not exist.")
+            if status == QueueStatus.FAILED:
+                connection.execute(
+                    """
+                    UPDATE experiment_queue
+                    SET status = ?, retry_count = retry_count + 1, error = ?, updated_at = ?
+                    WHERE spec_name = ?
+                    """,
+                    (status.value, error, now, spec_name),
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE experiment_queue
+                    SET status = ?, error = ?, updated_at = ?
+                    WHERE spec_name = ?
+                    """,
+                    (status.value, error, now, spec_name),
+                )
+            updated = connection.execute(
+                """
+                SELECT id, spec_name, status, retry_count, error, created_at, updated_at
+                FROM experiment_queue
+                WHERE spec_name = ?
+                """,
+                (spec_name,),
+            ).fetchone()
+        return self._queue_item_from_row(cast(tuple[Any, ...], updated))
+
     def _run_from_row(self, row: tuple[Any, ...]) -> ExperimentRun:
         return ExperimentRun(
             id=int(row[0]),
@@ -249,6 +415,17 @@ class SQLiteResultStore:
             status=RunStatus(str(row[4])),
             artifact_dir=Path(str(row[5])),
             created_at=self._parse_datetime(str(row[6])),
+        )
+
+    def _queue_item_from_row(self, row: tuple[Any, ...]) -> ExperimentQueueItem:
+        return ExperimentQueueItem(
+            id=int(row[0]),
+            spec_name=str(row[1]),
+            status=QueueStatus(str(row[2])),
+            retry_count=int(row[3]),
+            error=None if row[4] is None else str(row[4]),
+            created_at=self._parse_datetime(str(row[5])),
+            updated_at=self._parse_datetime(str(row[6])),
         )
 
     def _json_dumps(self, payload: Mapping[str, Any]) -> str:

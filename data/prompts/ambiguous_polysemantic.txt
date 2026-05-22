@@ -1,0 +1,7 @@
+# Polysemantic and ambiguous prompts for probing feature reuse.
+The bank was steep and covered in moss
+The bank approved the loan before noon
+The pitcher threw a curve during the final inning
+The pitcher sat full of water on the table
+The cell divided after the signal changed
+The prisoner returned to the cell after lunch

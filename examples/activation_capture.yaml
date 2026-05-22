@@ -1,0 +1,14 @@
+name: activation-capture-example
+family: polysemanticity
+backend: transformerlens
+description: Capture and summarize requested activation sites for a small prompt batch.
+parameters:
+  runner: activation_capture
+  model_name: gpt2-small
+  device: auto
+  prompts:
+    - "The Eiffel Tower is in"
+    - "The capital of France is"
+  sites:
+    - blocks.0.hook_resid_pre
+    - blocks.0.mlp.hook_post

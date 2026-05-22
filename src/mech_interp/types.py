@@ -66,6 +66,7 @@ class ArtifactRecord:
     media_type: str
     sha256: str
     size_bytes: int
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class GenerationProvider(Protocol):

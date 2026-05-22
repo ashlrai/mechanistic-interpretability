@@ -1,19 +1,29 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from mech_interp.analysis import summarize_recent_runs
 from mech_interp.config import load_config
 from mech_interp.experiments import load_experiment_specs
 from mech_interp.experiments.registry import ExperimentSpecValidationError
-from mech_interp.orchestration import ActivationEstimate, ExperimentRunner, ResourcePolicy
+from mech_interp.orchestration import (
+    ActivationEstimate,
+    ExperimentRunner,
+    ExperimentRunQueue,
+    ResourcePolicy,
+)
 from mech_interp.providers import configured_providers
 from mech_interp.storage import ArtifactStore, SQLiteResultStore
 
 app = typer.Typer(help="Local mechanistic interpretability research platform.")
+queue_app = typer.Typer(help="Manage the local resumable experiment queue.")
+app.add_typer(queue_app, name="queue")
 console = Console()
 
 
@@ -95,6 +105,57 @@ def init_store() -> None:
     console.print(f"Initialized result store at {config.project.database_path}")
 
 
+@queue_app.command("plan")
+def queue_plan(
+    directory: str = typer.Option(
+        "experiments",
+        help="Directory containing experiment YAML files.",
+    ),
+) -> None:
+    """Enqueue all discovered experiment specs that are not already queued."""
+    config = load_config()
+    registry = load_experiment_specs(directory)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    plan = ExperimentRunQueue(store).plan(registry.list())
+    console.print(
+        f"Queued {plan.enqueued} new experiment spec(s); {plan.total} discovered in {directory}."
+    )
+
+
+@queue_app.command("next")
+def queue_next() -> None:
+    """Claim the next planned or failed experiment spec for running."""
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    item = ExperimentRunQueue(store).claim_next()
+    if item is None:
+        console.print("No planned or failed experiment specs are available.")
+        return
+    console.print(item.spec_name)
+
+
+@queue_app.command("list")
+def queue_list() -> None:
+    """List queued experiment specs and their resumable state."""
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    table = Table(title="Experiment Queue")
+    table.add_column("ID")
+    table.add_column("Spec")
+    table.add_column("Status")
+    table.add_column("Retries")
+    table.add_column("Error")
+    for item in ExperimentRunQueue(store).list():
+        table.add_row(
+            str(item.id),
+            item.spec_name,
+            item.status.value,
+            str(item.retry_count),
+            item.error or "-",
+        )
+    console.print(table)
+
+
 @app.command("run")
 def run_experiments(
     name: str | None = typer.Option(None, help="Run a single experiment by name."),
@@ -151,6 +212,36 @@ def list_runs(limit: int = 20) -> None:
     console.print(table)
 
 
+@app.command("summarize-runs")
+def summarize_runs(limit: int = typer.Option(100, min=1)) -> None:
+    """Summarize recent runs by status, family, and backend."""
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    console.print_json(json.dumps(summarize_recent_runs(store, limit=limit), indent=2))
+
+
+@app.command("inspect-run")
+def inspect_run(run_id: Annotated[int, typer.Argument(min=1)]) -> None:
+    """Print stored spec, config, result, and manifest data for a run."""
+    bundle = _run_bundle(run_id)
+    console.print_json(json.dumps(bundle, indent=2, sort_keys=True))
+
+
+@app.command("export-run")
+def export_run(
+    run_id: Annotated[int, typer.Argument(min=1)],
+    output: Annotated[Path, typer.Option("--output", "-o", help="JSON file to write.")],
+) -> None:
+    """Export stored run data as a JSON bundle."""
+    bundle = _run_bundle(run_id)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(bundle, default=str, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    console.print(f"Exported run {run_id} to {output}")
+
+
 @app.command("estimate-activations")
 def estimate_activations(
     batch_size: int = typer.Option(..., min=1),
@@ -180,3 +271,62 @@ def estimate_activations(
             "max_activation_gib": round(policy.max_activation_gib, 4),
         }
     )
+
+
+def _run_bundle(run_id: int) -> dict[str, Any]:
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    spec = store.get_run_spec(run_id)
+    if spec is None:
+        console.print(f"[red]Run {run_id} was not found.[/red]")
+        raise typer.Exit(code=1)
+
+    result = store.get_result(run_id)
+    result_payload: dict[str, Any] | None = None
+    if result is not None:
+        result_payload = {
+            "run_id": result.run_id,
+            "status": result.status.value,
+            "metrics": result.metrics,
+            "artifacts": result.artifacts,
+            "notes": result.notes,
+        }
+
+    return {
+        "run_id": run_id,
+        "spec": spec,
+        "config": store.get_run_config(run_id) or {},
+        "result": result_payload,
+        "manifest": _read_manifest(config.project.artifact_dir, run_id, result_payload),
+    }
+
+
+def _read_manifest(
+    artifact_dir: Path,
+    run_id: int,
+    result_payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    manifest_path = None
+    if result_payload is not None:
+        artifacts = result_payload.get("artifacts", {})
+        if isinstance(artifacts, dict):
+            manifest_value = artifacts.get("manifest")
+            if isinstance(manifest_value, str):
+                manifest_path = Path(manifest_value)
+
+    candidate_paths = [
+        path
+        for path in (
+            manifest_path,
+            artifact_dir / f"run-{run_id:06d}" / "manifest.json",
+        )
+        if path is not None
+    ]
+    for path in candidate_paths:
+        if path.exists():
+            with path.open("r", encoding="utf-8") as manifest_file:
+                manifest = json.load(manifest_file)
+            if not isinstance(manifest, dict):
+                raise ValueError(f"Manifest {path} did not contain a JSON object.")
+            return manifest
+    return None

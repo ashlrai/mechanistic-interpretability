@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict
+from pathlib import Path
 
+from mech_interp.experiments.activation_capture import ActivationCaptureExperiment
 from mech_interp.experiments.base import Experiment
 from mech_interp.experiments.placeholder import SpecValidationExperiment
 from mech_interp.experiments.transformerlens_smoke import TransformerLensSmokeExperiment
 from mech_interp.storage import ArtifactStore, SQLiteResultStore
-from mech_interp.types import ExperimentResult, ExperimentSpec, RunStatus
+from mech_interp.types import ArtifactRecord, ExperimentResult, ExperimentSpec, RunStatus
 
 
 class ExperimentRunner:
@@ -33,6 +36,7 @@ class ExperimentRunner:
         try:
             experiment = experiment_for_spec(spec)
             result = experiment.run(spec, run)
+            records.extend(_artifact_records_from_result(result))
         except Exception as exc:
             result = ExperimentResult(
                 run_id=run.id,
@@ -75,6 +79,35 @@ def result_to_row(result: ExperimentResult) -> dict[str, object]:
 
 
 def experiment_for_spec(spec: ExperimentSpec) -> Experiment:
+    if spec.parameters.get("runner") == "activation_capture":
+        return ActivationCaptureExperiment()
     if spec.parameters.get("runner") == "transformerlens_smoke":
         return TransformerLensSmokeExperiment()
     return SpecValidationExperiment(spec.family)
+
+
+def _artifact_records_from_result(result: ExperimentResult) -> list[ArtifactRecord]:
+    records: list[ArtifactRecord] = []
+    for name, value in result.artifacts.items():
+        path = Path(value)
+        if not path.is_file():
+            continue
+        content = path.read_bytes()
+        records.append(
+            ArtifactRecord(
+                name=path.name if name == path.name else name,
+                path=path,
+                media_type=_media_type(path),
+                sha256=hashlib.sha256(content).hexdigest(),
+                size_bytes=len(content),
+            )
+        )
+    return records
+
+
+def _media_type(path: Path) -> str:
+    if path.suffix == ".json":
+        return "application/json"
+    if path.suffix in {".txt", ".md"}:
+        return "text/plain"
+    return "application/octet-stream"

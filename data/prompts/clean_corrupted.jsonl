@@ -1,0 +1,4 @@
+{"id":"eiffel-paris","prompt":"The Eiffel Tower is located in Paris.","metadata":{"kind":"clean","pair_id":"eiffel-city","answer":"Paris"}}
+{"id":"eiffel-rome","prompt":"The Eiffel Tower is located in Rome.","metadata":{"kind":"corrupted","pair_id":"eiffel-city","answer":"Paris","corruption":"city_swap"}}
+{"id":"shakespeare-hamlet","prompt":"William Shakespeare wrote Hamlet.","metadata":{"kind":"clean","pair_id":"hamlet-author","answer":"William Shakespeare"}}
+{"id":"austen-hamlet","prompt":"Jane Austen wrote Hamlet.","metadata":{"kind":"corrupted","pair_id":"hamlet-author","answer":"William Shakespeare","corruption":"author_swap"}}

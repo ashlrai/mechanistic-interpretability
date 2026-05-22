@@ -33,6 +33,7 @@ There are two different kinds of local model access:
 Core packages:
 
 - `mech_interp.backends`: adapters for instrumented models.
+- `mech_interp.datasets`: prompt dataset loaders, normalized records, and reproducibility hashes.
 - `mech_interp.providers`: adapters for black-box local generation providers.
 - `mech_interp.experiments`: experiment specs, registry, and initial experiment families.
 - `mech_interp.orchestration`: run planning and resource policy for local batches.
@@ -164,6 +165,27 @@ List recent experiment runs:
 uv run --group dev mech runs
 ```
 
+Summarize recent runs:
+
+```bash
+uv run --group dev mech summarize-runs --limit 100
+```
+
+Inspect or export a run bundle:
+
+```bash
+uv run --group dev mech inspect-run 1
+uv run --group dev mech export-run 1 --output artifacts/run-1-export.json
+```
+
+Plan and claim resumable queue work:
+
+```bash
+uv run --group dev mech queue plan
+uv run --group dev mech queue next
+uv run --group dev mech queue list
+```
+
 Or run the local smoke script:
 
 ```bash
@@ -185,6 +207,39 @@ Specs can opt into the TransformerLens smoke runner by setting `parameters.runne
 TransformerLens dependencies are installed, and ordinary tests use fakes so CI never downloads
 models.
 
+Specs can opt into real activation summary capture by setting `parameters.runner` to
+`activation_capture`. The runner calls the configured instrumented backend, captures requested hook
+sites, and writes `activation_summary.json` with shape, dtype, mean, std, max, and sparsity where
+those summaries are available.
+
+## Prompt Datasets
+
+Prompt datasets live under `data/prompts/` and can be loaded with:
+
+```python
+from mech_interp.datasets import load_prompt_dataset
+
+dataset = load_prompt_dataset("data/prompts/factual.jsonl")
+print(dataset.sha256)
+print(dataset.prompts)
+```
+
+Supported formats:
+
+- JSONL: one object per line with a required `prompt`, optional `id`, optional `metadata`, and any
+  extra fields folded into metadata.
+- Plain text: one prompt per non-empty line, with `#` comment lines ignored.
+
+`PromptRecord.sha256` and `PromptDataset.sha256` are computed from normalized record content, so
+hashes are stable across JSON field ordering and formatting changes. Experiment specs can reference
+datasets without runner changes by storing paths and optional expected hashes in `parameters`:
+
+```yaml
+parameters:
+  dataset_path: data/prompts/factual.jsonl
+  dataset_sha256: "<expected digest>"
+```
+
 An optional example lives at `examples/transformerlens_smoke.yaml`. It is not in the default
 `experiments/` directory because it requires the optional TransformerLens dependency and may trigger
 a local model download:
@@ -194,6 +249,14 @@ uv sync --group dev --extra interp
 uv run --group dev --extra interp mech run \
   --directory examples \
   --name transformerlens-activation-smoke
+```
+
+There is also an activation-capture example:
+
+```bash
+uv run --group dev --extra interp mech run \
+  --directory examples \
+  --name activation-capture-smoke
 ```
 
 ## Local-First Verification
