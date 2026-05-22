@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -39,7 +40,7 @@ class ActivationCaptureExperiment(Experiment):
             for site in captured_sites
         }
 
-        artifact_path = (run.artifact_dir / "activation_summary.json").resolve()
+        artifact_path = (_run_artifact_dir(run) / "activation_summary.json").resolve()
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         artifact_path.write_text(
             json.dumps(
@@ -102,6 +103,13 @@ def summarize_activation(value: Any) -> dict[str, Any]:
         }
     )
     return summary
+
+
+def _run_artifact_dir(run: ExperimentRun) -> Path:
+    expected_name = f"run-{run.id:06d}"
+    if run.artifact_dir.name == expected_name:
+        return run.artifact_dir
+    return run.artifact_dir / expected_name
 
 
 def _backend_config(spec: ExperimentSpec) -> dict[str, Any]:
