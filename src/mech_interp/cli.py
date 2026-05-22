@@ -8,6 +8,7 @@ from rich.table import Table
 
 from mech_interp.config import load_config
 from mech_interp.experiments import load_experiment_specs
+from mech_interp.experiments.registry import ExperimentSpecValidationError
 from mech_interp.orchestration import ActivationEstimate, ExperimentRunner, ResourcePolicy
 from mech_interp.providers import configured_providers
 from mech_interp.storage import ArtifactStore, SQLiteResultStore
@@ -35,6 +36,24 @@ def list_experiments(directory: str = "experiments") -> None:
     for spec in registry.list():
         table.add_row(spec.name, spec.family, spec.backend, spec.description)
     console.print(table)
+
+
+@app.command("validate")
+def validate_experiments(
+    directory: str = typer.Option(
+        "experiments",
+        help="Directory containing experiment YAML files.",
+    ),
+) -> None:
+    """Validate experiment specs without creating runs or artifacts."""
+    try:
+        registry = load_experiment_specs(directory)
+    except ExperimentSpecValidationError as exc:
+        console.print(f"[red]Invalid experiment specs:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    specs = registry.list()
+    console.print(f"Validated {len(specs)} experiment spec(s) in {directory}.")
 
 
 @app.command("providers")

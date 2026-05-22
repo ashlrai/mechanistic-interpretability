@@ -103,6 +103,7 @@ weights directly.
 uv run --group dev python -m pytest
 uv run --group dev ruff check .
 uv run --group dev mypy src tests
+uv run --group dev mech validate
 ```
 
 Or run the local check script:
@@ -115,6 +116,12 @@ List registered experiment families:
 
 ```bash
 uv run --group dev mech experiments
+```
+
+Validate experiment YAML without creating runs:
+
+```bash
+uv run --group dev mech validate
 ```
 
 Check local provider reachability:
@@ -177,6 +184,25 @@ Specs can opt into the TransformerLens smoke runner by setting `parameters.runne
 `transformerlens_smoke`. That path captures selected activation sites when the optional
 TransformerLens dependencies are installed, and ordinary tests use fakes so CI never downloads
 models.
+
+An optional example lives at `examples/transformerlens_smoke.yaml`. It is not in the default
+`experiments/` directory because it requires the optional TransformerLens dependency and may trigger
+a local model download:
+
+```bash
+uv sync --group dev --extra interp
+uv run --group dev --extra interp mech run \
+  --directory examples \
+  --name transformerlens-activation-smoke
+```
+
+## Local-First Verification
+
+This repo intentionally does not use GitHub Actions. Local checks are the source of truth:
+
+```bash
+bash scripts/check.sh
+```
 
 ## Experiment Roadmap
 

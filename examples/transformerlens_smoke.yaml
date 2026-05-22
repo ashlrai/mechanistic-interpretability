@@ -1,0 +1,13 @@
+name: transformerlens-activation-smoke
+family: polysemanticity
+backend: transformerlens
+description: Optional smoke run that captures selected TransformerLens activation sites.
+parameters:
+  runner: transformerlens_smoke
+  model_name: gpt2-small
+  device: auto
+  prompts:
+    - "The Eiffel Tower is in"
+    - "The capital of France is"
+  sites:
+    - blocks.0.hook_resid_pre
