@@ -1,4 +1,6 @@
+import csv
 import json
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -14,7 +16,7 @@ def test_validate_command_accepts_default_experiments() -> None:
     result = CliRunner().invoke(cli.app, ["validate"])
 
     assert result.exit_code == 0
-    assert "Validated 3 experiment spec" in result.output
+    assert "Validated 4 experiment spec" in result.output
 
 
 def test_validate_command_fails_invalid_specs(tmp_path: Path) -> None:
@@ -69,6 +71,70 @@ def test_export_run_writes_json_bundle(
     assert bundle["spec"]["name"] == "demo"
     assert bundle["result"]["metrics"] == {"accuracy": 0.75}
     assert bundle["manifest"]["artifacts"][0]["name"] == "result.json"
+
+
+def test_query_runs_csv_includes_metadata_and_metrics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact_dir = tmp_path / "artifacts"
+    database_path = tmp_path / "runs.sqlite3"
+    config = AppConfig(
+        project=ProjectConfig(artifact_dir=artifact_dir, database_path=database_path)
+    )
+    store = SQLiteResultStore(database_path, artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(
+            name="query-demo",
+            family="circuit_patching",
+            backend="transformerlens",
+            parameters={"tags": ["interesting"], "hypothesis": "test hypothesis"},
+        )
+    )
+    store.save_result(
+        ExperimentResult(
+            run_id=run.id,
+            status=RunStatus.SUCCEEDED,
+            metrics={"recovery": 0.75},
+        )
+    )
+    monkeypatch.setattr(cli, "load_config", lambda: config)
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "query-runs",
+            "--family",
+            "circuit_patching",
+            "--output-format",
+            "csv",
+        ],
+    )
+
+    rows = list(csv.DictReader(StringIO(result.output)))
+    assert result.exit_code == 0
+    assert rows[0]["spec_name"] == "query-demo"
+    assert json.loads(rows[0]["tags"]) == ["interesting"]
+    assert rows[0]["hypothesis"] == "test hypothesis"
+    assert json.loads(rows[0]["metrics"]) == {"recovery": 0.75}
+
+
+def test_query_runs_rejects_unknown_output_format(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = AppConfig(
+        project=ProjectConfig(
+            artifact_dir=tmp_path / "artifacts",
+            database_path=tmp_path / "runs.sqlite3",
+        )
+    )
+    monkeypatch.setattr(cli, "load_config", lambda: config)
+
+    result = CliRunner().invoke(cli.app, ["query-runs", "--output-format", "xml"])
+
+    assert result.exit_code == 1
+    assert "--output-format must be one of" in result.output
 
 
 def _create_temp_run(tmp_path: Path) -> tuple[AppConfig, int]:

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Reports</h1>
+<div class="actions">
+  <form method="post" action="/reports/generate">
+    <button type="submit">Generate Reports</button>
+  </form>
+</div>
+<table>
+  <tr><th>Artifact</th><th>Status</th><th>Size</th><th>Path</th></tr>
+  {% for report in reports %}
+  <tr>
+    <td>{{ report.name }}</td>
+    <td>{% if report.exists %}available{% else %}missing{% endif %}</td>
+    <td>{{ report.size_bytes or "-" }}</td>
+    <td>{% if report.href %}<a href="{{ report.href }}">{{ report.path }}</a>{% else %}{{ report.path }}{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

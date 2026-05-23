@@ -1,0 +1,27 @@
+<section hx-get="/status/cards" hx-trigger="every 5s" hx-swap="outerHTML">
+  <h2>Lab Status</h2>
+  <div class="status-grid">
+    {% for name, count in status_cards.queue_counts.items() %}
+    <div class="status-card">
+      <div class="muted">{{ name|capitalize }}</div>
+      <strong>{{ count }}</strong>
+    </div>
+    {% endfor %}
+  </div>
+  <table>
+    <tr><th>Database</th><td>{{ status_cards.database_path }}</td></tr>
+    <tr><th>Artifacts</th><td>{{ status_cards.artifact_root }}</td></tr>
+    <tr><th>Experiments</th><td>{{ status_cards.experiment_dir }}</td></tr>
+    <tr>
+      <th>Latest Event</th>
+      <td>
+        {% if status_cards.latest_event %}
+        {{ status_cards.latest_event.event_type }}: {{ status_cards.latest_event.message }}
+        {% else %}
+        No events recorded.
+        {% endif %}
+      </td>
+    </tr>
+    <tr><th>Updated</th><td>{{ status_cards.updated_at.isoformat() }}</td></tr>
+  </table>
+</section>

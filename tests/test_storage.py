@@ -118,3 +118,83 @@ def test_sqlite_store_migrates_existing_database(tmp_path: Path) -> None:
             for row in connection.execute("PRAGMA table_info(runs)").fetchall()
         }
     assert {"spec_json", "config_json"} <= columns
+
+
+def test_sqlite_store_migrates_partial_v2_queue_tables(tmp_path: Path) -> None:
+    database_path = tmp_path / "runs.sqlite3"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                spec_name TEXT NOT NULL,
+                family TEXT NOT NULL,
+                backend TEXT NOT NULL,
+                status TEXT NOT NULL,
+                artifact_dir TEXT NOT NULL,
+                spec_json TEXT NOT NULL DEFAULT '{}',
+                config_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE results (
+                run_id INTEGER PRIMARY KEY,
+                status TEXT NOT NULL,
+                metrics_json TEXT NOT NULL,
+                artifacts_json TEXT NOT NULL,
+                notes TEXT NOT NULL,
+                FOREIGN KEY(run_id) REFERENCES runs(id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE experiment_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                spec_name TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "CREATE TABLE queue_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, queue_id INTEGER)"
+        )
+        connection.execute(
+            "CREATE TABLE run_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT)"
+        )
+
+    store = SQLiteResultStore(database_path, tmp_path / "artifacts")
+    store.initialize()
+
+    with sqlite3.connect(database_path) as connection:
+        queue_attempt_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(queue_attempts)").fetchall()
+        }
+        event_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(run_events)").fetchall()
+        }
+        user_version = connection.execute("PRAGMA user_version").fetchone()[0]
+    assert {
+        "lease_token",
+        "worker_id",
+        "status",
+        "claimed_at",
+        "heartbeat_at",
+        "started_at",
+        "finished_at",
+        "error",
+        "run_id",
+    } <= queue_attempt_columns
+    assert {"run_id", "queue_id", "attempt_id", "message", "payload_json", "created_at"} <= (
+        event_columns
+    )
+    assert user_version == 2

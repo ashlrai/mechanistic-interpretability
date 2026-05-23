@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Dashboard</h1>
+{% include "status_cards.html" %}
+<section>
+  <h2>Recent Runs</h2>
+  <table>
+    <tr><th>Run</th><th>Spec</th><th>Family</th><th>Status</th></tr>
+    {% for run in runs %}
+    <tr><td><a href="/runs/{{ run.id }}">{{ run.id }}</a></td><td>{{ run.spec_name }}</td><td>{{ run.family }}</td><td>{{ run.status.value }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+<section>
+  <h2>Queue Status</h2>
+  <table>
+    <tr><th>ID</th><th>Spec</th><th>Status</th><th>Retries</th><th>Run</th></tr>
+    {% for item in queue_items %}
+    <tr><td>{{ item.id }}</td><td>{{ item.spec_name }}</td><td>{{ item.status.value }}</td><td>{{ item.retry_count }}</td><td>{{ item.run_id or "-" }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+<section>
+  <h2>Top Circuit Patching Results</h2>
+  <table>
+    <tr><th>Run</th><th>Spec</th><th>Hook site</th><th>Recovery</th></tr>
+    {% for site in top_sites %}
+    <tr><td>{{ site.run_id }}</td><td>{{ site.spec_name }}</td><td>{{ site.hook_site }}</td><td>{{ "%.4f"|format(site.recovery_fraction) }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

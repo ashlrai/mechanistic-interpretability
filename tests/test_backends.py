@@ -2,6 +2,7 @@ import importlib
 from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import pytest
 
 from mech_interp.backends import (
@@ -10,6 +11,7 @@ from mech_interp.backends import (
     create_instrumented_backend,
 )
 from mech_interp.providers import LMStudioProvider, OllamaProvider
+from mech_interp.types import ActivationPatchPromptPair, ActivationPatchRequest
 
 
 def test_generation_providers_construct() -> None:
@@ -92,3 +94,93 @@ def test_transformerlens_backend_captures_selected_activations(
         "blocks.0.hook_resid_pre": "captured-resid",
         "blocks.0.mlp.hook_post": "captured-mlp",
     }
+
+
+def test_transformerlens_backend_runs_activation_patching_with_fake_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeScalar:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def item(self) -> float:
+            return self.value
+
+    class FakeActivation:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def clone(self) -> "FakeActivation":
+            return FakeActivation(self.value)
+
+        def __getitem__(self, key: object) -> "FakeActivation":
+            return self
+
+        def __setitem__(self, key: object, value: object) -> None:
+            if isinstance(value, FakeActivation):
+                self.value = value.value
+                return
+            if not isinstance(value, int | float):
+                raise TypeError("fake activation value must be numeric")
+            self.value = float(value)
+
+        def norm(self) -> FakeScalar:
+            return FakeScalar(abs(self.value))
+
+    class FakeHookedTransformer:
+        def to_single_token(self, token: str) -> int:
+            return {" yes": 1, " no": 2}[token]
+
+        def run_with_cache(
+            self,
+            prompt: str,
+            names_filter: Any,
+        ) -> tuple[np.ndarray[Any, Any], dict[str, FakeActivation]]:
+            assert prompt == "clean"
+            cache = {
+                "blocks.0.hook_resid_pre": FakeActivation(12.0),
+                "blocks.0.mlp.hook_post": FakeActivation(99.0),
+            }
+            return np.array([[[0.0, 5.0, 1.0]]]), {
+                name: value for name, value in cache.items() if names_filter(name)
+            }
+
+        def __call__(self, prompt: str) -> np.ndarray[Any, Any]:
+            assert prompt == "corrupted"
+            return np.array([[[0.0, 2.0, 3.0]]])
+
+        def run_with_hooks(
+            self,
+            prompt: str,
+            fwd_hooks: list[tuple[str, Any]],
+        ) -> np.ndarray[Any, Any]:
+            assert prompt == "corrupted"
+            hook_site, hook_fn = fwd_hooks[0]
+            assert hook_site == "blocks.0.hook_resid_pre"
+            patched = hook_fn(FakeActivation(0.0), None)
+            assert patched.value == 12.0
+            return np.array([[[0.0, 4.0, 2.0]]])
+
+    backend = TransformerLensBackend(model_name="tiny")
+    backend.model = FakeHookedTransformer()
+
+    results = backend.run_activation_patching(
+        ActivationPatchRequest(
+            model_name="tiny",
+            prompt_pairs=(
+                ActivationPatchPromptPair(
+                    id="pair",
+                    clean_prompt="clean",
+                    corrupted_prompt="corrupted",
+                    correct_token=" yes",
+                    incorrect_token=" no",
+                ),
+            ),
+            hook_sites=("blocks.0.hook_resid_pre",),
+        )
+    )
+
+    assert len(results) == 1
+    assert results[0].hook_site == "blocks.0.hook_resid_pre"
+    assert results[0].recovery_fraction == pytest.approx(0.6)
+    assert results[0].activation_norm == 12.0

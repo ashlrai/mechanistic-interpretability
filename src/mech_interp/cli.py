@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import csv
 import json
+import sys
+import time
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -9,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from mech_interp.analysis import summarize_recent_runs
+from mech_interp.analysis.run_reports import write_aggregate_reports
 from mech_interp.config import load_config
 from mech_interp.experiments import load_experiment_specs
 from mech_interp.experiments.registry import ExperimentSpecValidationError
@@ -18,13 +22,24 @@ from mech_interp.orchestration import (
     ExperimentRunQueue,
     ResourcePolicy,
 )
+from mech_interp.orchestration.iteration import IterationCaps, propose_and_enqueue_iteration
+from mech_interp.orchestration.preflight import (
+    inspect_dataset,
+    preflight_spec,
+    validate_answer_tokens,
+)
+from mech_interp.orchestration.proposals import propose_followups
 from mech_interp.providers import configured_providers
 from mech_interp.storage import ArtifactStore, SQLiteResultStore
 
 app = typer.Typer(help="Local mechanistic interpretability research platform.")
 queue_app = typer.Typer(help="Manage the local resumable experiment queue.")
+dataset_app = typer.Typer(help="Inspect and validate local datasets.")
 app.add_typer(queue_app, name="queue")
+app.add_typer(dataset_app, name="dataset")
 console = Console()
+DEFAULT_REPORT_OUTPUT = Path("artifacts/reports")
+DEFAULT_PROPOSAL_OUTPUT = Path("experiments/proposed")
 
 
 @app.command("config")
@@ -144,16 +159,107 @@ def queue_list() -> None:
     table.add_column("Spec")
     table.add_column("Status")
     table.add_column("Retries")
+    table.add_column("Lease")
+    table.add_column("Phase")
     table.add_column("Error")
     for item in ExperimentRunQueue(store).list():
+        detail = item.error or (f"run {item.run_id}" if item.run_id is not None else "-")
         table.add_row(
             str(item.id),
             item.spec_name,
             item.status.value,
             str(item.retry_count),
-            item.error or "-",
+            item.lease_token[:8] if item.lease_token else "-",
+            item.current_phase or "-",
+            detail,
         )
     console.print(table)
+
+
+@queue_app.command("run")
+def queue_run(
+    once: bool = typer.Option(False, "--once", help="Run one queued experiment and exit."),
+    loop: bool = typer.Option(False, "--loop", help="Continuously poll and run queued work."),
+    poll_interval: float = typer.Option(5.0, min=0.1, help="Loop poll interval in seconds."),
+    directory: str = typer.Option(
+        "experiments",
+        help="Directory containing experiment YAML files.",
+    ),
+) -> None:
+    """Execute claimed queue items through the experiment runner."""
+    if once == loop:
+        console.print("[red]Choose exactly one of --once or --loop.[/red]")
+        raise typer.Exit(code=1)
+    config = load_config()
+    registry = load_experiment_specs(directory)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    queue = ExperimentRunQueue(store)
+    runner = ExperimentRunner(
+        result_store=store,
+        artifact_store=ArtifactStore(config.project.artifact_dir),
+    )
+    specs_by_name = {spec.name: spec for spec in registry.list()}
+    if once:
+        result = queue.run_once(specs_by_name, runner)
+        if result is None:
+            console.print("No queued experiment specs are available.")
+            return
+        console.print(f"Run {result.run_id} finished with status {result.status.value}.")
+        return
+    while True:
+        before_events = store.list_run_events(limit=1)
+        result = queue.run_once(specs_by_name, runner)
+        for event in reversed(store.list_run_events(limit=20)):
+            if before_events and event.id <= before_events[0].id:
+                continue
+            console.print(
+                f"[{event.created_at.isoformat()}] {event.event_type}: {event.message}"
+            )
+        if result is None:
+            time.sleep(poll_interval)
+
+
+@queue_app.command("requeue-stale")
+def queue_requeue_stale(
+    stale_after_seconds: int = typer.Option(3600, min=1, help="Age threshold for running items."),
+) -> None:
+    """Move stale running queue items back to planned."""
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    requeued = ExperimentRunQueue(store).requeue_stale(stale_after_seconds)
+    console.print(f"Requeued {len(requeued)} stale item(s).")
+
+
+@queue_app.command("pause")
+def queue_pause(queue_id: Annotated[int, typer.Argument(min=1)]) -> None:
+    """Pause a queue item by id."""
+    _mutate_queue_item(queue_id, "pause", "Paused")
+
+
+@queue_app.command("resume")
+def queue_resume(queue_id: Annotated[int, typer.Argument(min=1)]) -> None:
+    """Resume a paused queue item by id."""
+    _mutate_queue_item(queue_id, "resume", "Resumed")
+
+
+@queue_app.command("cancel")
+def queue_cancel(queue_id: Annotated[int, typer.Argument(min=1)]) -> None:
+    """Cancel a queue item by id."""
+    _mutate_queue_item(queue_id, "cancel", "Cancelled")
+
+
+@queue_app.command("requeue")
+def queue_requeue(queue_id: Annotated[int, typer.Argument(min=1)]) -> None:
+    """Requeue a queue item by id."""
+    _mutate_queue_item(queue_id, "requeue", "Requeued")
+
+
+@queue_app.command("status")
+def queue_status() -> None:
+    """Show queue counts by status."""
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    console.print_json(json.dumps(store.queue_counts_by_status(), indent=2))
 
 
 @app.command("run")
@@ -218,6 +324,200 @@ def summarize_runs(limit: int = typer.Option(100, min=1)) -> None:
     config = load_config()
     store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
     console.print_json(json.dumps(summarize_recent_runs(store, limit=limit), indent=2))
+
+
+@app.command("report-runs")
+def report_runs(
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Directory for aggregate report artifacts."),
+    ] = DEFAULT_REPORT_OUTPUT,
+    limit: int = typer.Option(100, min=1),
+) -> None:
+    """Write aggregate research summaries for recent runs."""
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    reports = write_aggregate_reports(store, output, limit=limit)
+    console.print(f"Wrote aggregate reports to {reports.output_dir}")
+
+
+@app.command("preflight")
+def preflight(
+    name: str | None = typer.Option(None, help="Preflight a single experiment by name."),
+    directory: str = typer.Option(
+        "experiments",
+        help="Directory containing experiment YAML files.",
+    ),
+) -> None:
+    """Validate runtime readiness for specs without running experiments."""
+    registry = load_experiment_specs(directory)
+    specs = registry.list() if name is None else [registry.get(name)]
+    failed = False
+    for spec in specs:
+        report = preflight_spec(spec)
+        table = Table(title=f"Preflight: {spec.name}")
+        table.add_column("Check")
+        table.add_column("Status")
+        table.add_column("Message")
+        for check in report.checks:
+            table.add_row(check.name, check.status, check.message)
+        console.print(table)
+        failed = failed or not report.ok
+    if failed:
+        raise typer.Exit(code=1)
+
+
+@dataset_app.command("inspect")
+def dataset_inspect(path: Annotated[Path, typer.Argument(exists=True)]) -> None:
+    """Inspect dataset rows, fields, size, and SHA-256."""
+    console.print_json(json.dumps(inspect_dataset(path), indent=2))
+
+
+@dataset_app.command("validate-tokens")
+def dataset_validate_tokens(
+    path: Annotated[Path, typer.Argument(exists=True)],
+    model: str = typer.Option(..., help="Model name used for answer-token validation context."),
+) -> None:
+    """Validate answer-token fields in a dataset with lightweight local checks."""
+    result = validate_answer_tokens(path, model)
+    console.print_json(json.dumps(result, indent=2))
+    if not result["valid"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("query-runs")
+def query_runs(
+    family: str | None = None,
+    status: str | None = None,
+    backend: str | None = None,
+    model: str | None = None,
+    dataset_hash: str | None = None,
+    tag: str | None = None,
+    metric: str | None = None,
+    metric_min: float | None = None,
+    hook_site: str | None = None,
+    layer: int | None = None,
+    matrix_id: int | None = None,
+    output_format: str = typer.Option("table", "--output-format", help="table, json, or csv."),
+    limit: int = typer.Option(100, min=1),
+) -> None:
+    """Search indexed runs by spec metadata, metrics, tags, and matrix linkage."""
+    output_format = output_format.lower()
+    if output_format not in {"table", "json", "csv"}:
+        console.print("[red]--output-format must be one of: table, json, csv.[/red]")
+        raise typer.Exit(code=1)
+
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    rows = store.query_runs(
+        family=family,
+        status=status,
+        backend=backend,
+        model=model,
+        dataset_hash=dataset_hash,
+        tag=tag,
+        metric=metric,
+        metric_min=metric_min,
+        hook_site=hook_site,
+        layer=layer,
+        matrix_id=matrix_id,
+        limit=limit,
+    )
+    if output_format == "json":
+        console.print_json(json.dumps(rows, indent=2, default=str))
+        return
+    if output_format == "csv":
+        writer = csv.DictWriter(sys.stdout, fieldnames=_QUERY_RUN_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(_query_run_csv_row(row))
+        return
+
+    if not rows:
+        console.print("No runs matched query.")
+        return
+
+    table = Table(title="Run Query")
+    columns = ("run_id", "spec_name", "family", "backend", "status", "metric", "tags", "matrix")
+    for column in columns:
+        table.add_column(column)
+    for row in rows:
+        table.add_row(
+            str(row["run_id"]),
+            str(row["spec_name"]),
+            str(row["family"]),
+            str(row["backend"]),
+            str(row["status"]),
+            _metric_summary(row, metric),
+            ", ".join(str(tag_value) for tag_value in row.get("tags", [])) or "-",
+            str(row["matrix_id"]) if row.get("matrix_id") is not None else "-",
+        )
+    console.print(table)
+
+
+@app.command("propose-followups")
+def propose_followup_specs(
+    family: str = typer.Option("circuit_patching", help="Experiment family to propose for."),
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Directory for proposed YAML specs."),
+    ] = DEFAULT_PROPOSAL_OUTPUT,
+    limit: int = typer.Option(20, min=1),
+) -> None:
+    """Generate deterministic follow-up specs from aggregate reports."""
+    result = propose_followups(family, output, limit=limit)
+    console.print(
+        f"Wrote {len(result.spec_paths)} proposed spec(s) and manifest {result.manifest_path}."
+    )
+
+
+@app.command("iterate")
+def iterate(
+    family: str = typer.Option("circuit_patching", help="Experiment family to propose for."),
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Directory for iteration proposal manifests."),
+    ] = DEFAULT_PROPOSAL_OUTPUT,
+    max_generated_specs: int = typer.Option(50, min=1),
+    max_queued_per_iteration: int = typer.Option(10, min=1),
+    max_failed_retry_count: int = typer.Option(2, min=0),
+    allow_tensor_retention: bool = typer.Option(False, help="Allow retained tensor artifacts."),
+) -> None:
+    """Generate, preflight, rank, and enqueue bounded local follow-up specs."""
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    result = propose_and_enqueue_iteration(
+        store,
+        family,
+        output,
+        IterationCaps(
+            max_generated_specs=max_generated_specs,
+            max_queued_per_iteration=max_queued_per_iteration,
+            max_failed_retry_count=max_failed_retry_count,
+            allow_tensor_retention=allow_tensor_retention,
+        ),
+    )
+    console.print(
+        f"Generated {result.generated} candidate(s), queued {result.queued}, "
+        f"wrote {result.manifest_path}."
+    )
+
+
+@app.command("cockpit")
+def cockpit(
+    host: str = typer.Option("127.0.0.1", help="Bind host."),
+    port: int = typer.Option(8000, min=1, max=65535, help="Bind port."),
+    directory: str = typer.Option(
+        "experiments",
+        help="Directory containing experiment YAML files.",
+    ),
+) -> None:
+    """Run the local FastAPI/HTMX research cockpit."""
+    import uvicorn
+
+    from mech_interp.cockpit import create_app
+
+    uvicorn.run(create_app(load_config(), experiment_dir=directory), host=host, port=port)
 
 
 @app.command("inspect-run")
@@ -330,3 +630,61 @@ def _read_manifest(
                 raise ValueError(f"Manifest {path} did not contain a JSON object.")
             return manifest
     return None
+
+
+_QUERY_RUN_COLUMNS = (
+    "run_id",
+    "spec_name",
+    "family",
+    "backend",
+    "status",
+    "created_at",
+    "spec_sha256",
+    "tags",
+    "hypothesis",
+    "matrix_id",
+    "metrics",
+)
+
+
+def _mutate_queue_item(queue_id: int, action: str, label: str) -> None:
+    config = load_config()
+    queue = ExperimentRunQueue(
+        SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    )
+    try:
+        item = getattr(queue, action)(queue_id)
+    except (KeyError, RuntimeError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"{label} queue item {item.id}; status is {item.status.value}.")
+
+
+def _query_run_csv_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "run_id": row.get("run_id"),
+        "spec_name": row.get("spec_name"),
+        "family": row.get("family"),
+        "backend": row.get("backend"),
+        "status": row.get("status"),
+        "created_at": row.get("created_at"),
+        "spec_sha256": row.get("spec_sha256") or "",
+        "tags": _json_cell(row.get("tags", [])),
+        "hypothesis": row.get("hypothesis") or "",
+        "matrix_id": row.get("matrix_id") if row.get("matrix_id") is not None else "",
+        "metrics": _json_cell(row.get("metrics", {})),
+    }
+
+
+def _metric_summary(row: dict[str, Any], metric: str | None) -> str:
+    metrics = row.get("metrics", {})
+    if not isinstance(metrics, dict) or not metrics:
+        return "-"
+    if metric:
+        value = metrics.get(metric)
+        return f"{metric}={value}" if value is not None else "-"
+    return ", ".join(f"{key}={value}" for key, value in sorted(metrics.items()))
+
+
+def _json_cell(value: Any) -> str:
+    return json.dumps(value, default=str, sort_keys=True)

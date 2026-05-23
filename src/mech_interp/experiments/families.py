@@ -7,6 +7,7 @@ class ExperimentFamily(StrEnum):
     POLYSEMANTICITY = "polysemanticity"
     SUPERPOSITION = "superposition"
     CIRCUIT_PATCHING = "circuit_patching"
+    CROSS_MODEL_REPRESENTATION_PROBE = "cross_model_representation_probe"
 
 
 class ExperimentBackend(StrEnum):

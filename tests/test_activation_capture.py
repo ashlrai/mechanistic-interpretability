@@ -12,7 +12,17 @@ from mech_interp.experiments.activation_capture import (
 )
 from mech_interp.orchestration import ExperimentRunner
 from mech_interp.storage import ArtifactStore, SQLiteResultStore
-from mech_interp.types import ExperimentResult, ExperimentRun, ExperimentSpec, RunStatus, utc_now
+from mech_interp.types import (
+    ActivationPatchRequest,
+    ActivationPatchSiteResult,
+    CrossModelProbeRequest,
+    CrossModelProbeResult,
+    ExperimentResult,
+    ExperimentRun,
+    ExperimentSpec,
+    RunStatus,
+    utc_now,
+)
 
 
 class FakeArray:
@@ -51,6 +61,18 @@ class FakeActivationBackend:
         }
 
     def run_intervention(self, prompt: str, interventions: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def run_activation_patching(
+        self,
+        request: ActivationPatchRequest,
+    ) -> list[ActivationPatchSiteResult]:
+        raise NotImplementedError
+
+    def run_cross_model_probe(
+        self,
+        request: CrossModelProbeRequest,
+    ) -> list[CrossModelProbeResult]:
         raise NotImplementedError
 
 

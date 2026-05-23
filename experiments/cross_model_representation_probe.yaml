@@ -1,0 +1,31 @@
+name: cross-model-representation-probe-smoke
+family: cross_model_representation_probe
+backend: transformerlens
+description: Smoke test for a local cross-model activation representation probe.
+parameters:
+  source_model: tiny-stories-1M
+  target_model: tiny-stories-2M
+  source_hook_site: blocks.0.hook_resid_pre
+  target_hook_site: blocks.0.hook_resid_pre
+  ridge_alpha: 1.0
+  dtype: float32
+  records:
+    - id: train-1
+      split: train
+      prompt: The capital of France is Paris.
+      correct_token: " Paris"
+      incorrect_token: " Rome"
+    - id: train-2
+      split: train
+      prompt: The capital of Italy is Rome.
+      correct_token: " Rome"
+      incorrect_token: " Paris"
+    - id: eval-1
+      split: eval
+      prompt: The capital of Germany is Berlin.
+      correct_token: " Berlin"
+      incorrect_token: " Madrid"
+  artifact_policy:
+    retain_probe_weights: false
+    write_report: true
+    activation_verbalization: false

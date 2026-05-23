@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Artifacts for Run {{ run.id }}</h1>
+<p class="muted">{{ run.spec_name }} / {{ run.family }} / {{ run.status.value }}</p>
+<table>
+  <tr>
+    <th>Name</th>
+    <th>Type</th>
+    <th>Size</th>
+    <th>SHA-256</th>
+    <th>Path</th>
+  </tr>
+  {% for artifact in artifacts %}
+  <tr>
+    <td>{{ artifact.name }}</td>
+    <td>{{ artifact.media_type or "-" }}</td>
+    <td>{{ artifact.size_bytes or "-" }}</td>
+    <td>{{ artifact.sha256 or "-" }}</td>
+    <td>{% if artifact.href %}<a href="{{ artifact.href }}">{{ artifact.path }}</a>{% else %}{{ artifact.path }}{% endif %}</td>
+  </tr>
+  {% if artifact.metadata %}
+  <tr><td colspan="5"><pre>{{ artifact.metadata }}</pre></td></tr>
+  {% endif %}
+  {% if artifact.preview %}
+  <tr><td colspan="5"><pre>{{ artifact.preview }}</pre></td></tr>
+  {% endif %}
+  {% endfor %}
+</table>
+{% if not artifacts %}
+<p>No artifacts were recorded for this run.</p>
+{% endif %}
+{% endblock %}

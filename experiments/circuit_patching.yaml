@@ -1,8 +1,18 @@
 name: circuit-patching-smoke
 family: circuit_patching
 backend: transformerlens
-description: Initial placeholder spec for activation patching and causal circuit localization.
+description: Real clean-to-corrupted residual-stream activation patching smoke run.
 parameters:
-  source_prompt: "The Eiffel Tower is in"
-  target_prompt: "The Colosseum is in"
+  model: gpt2-small
+  source_prompt: "The Eiffel Tower is in Paris"
+  target_prompt: "The Eiffel Tower is in Rome"
+  answer_tokens:
+    correct: " Paris"
+    incorrect: " Rome"
+  layers: [0]
   patch_sites: ["resid_pre"]
+  target_position: -1
+  patch_position: -1
+  artifact_policy:
+    retain_activation_tensors: false
+    write_report: true

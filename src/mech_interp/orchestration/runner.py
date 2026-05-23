@@ -6,6 +6,10 @@ from pathlib import Path
 
 from mech_interp.experiments.activation_capture import ActivationCaptureExperiment
 from mech_interp.experiments.base import Experiment
+from mech_interp.experiments.circuit_patching import CircuitPatchingExperiment
+from mech_interp.experiments.cross_model_representation_probe import (
+    CrossModelRepresentationProbeExperiment,
+)
 from mech_interp.experiments.placeholder import SpecValidationExperiment
 from mech_interp.experiments.transformerlens_smoke import TransformerLensSmokeExperiment
 from mech_interp.storage import ArtifactStore, SQLiteResultStore
@@ -19,6 +23,7 @@ class ExperimentRunner:
 
     def run(self, spec: ExperimentSpec) -> ExperimentResult:
         run = self.result_store.create_run(spec)
+        self.result_store.update_run_status(run.id, RunStatus.RUNNING)
         records = [
             self.artifact_store.write_json(
                 run.id,
@@ -79,6 +84,10 @@ def result_to_row(result: ExperimentResult) -> dict[str, object]:
 
 
 def experiment_for_spec(spec: ExperimentSpec) -> Experiment:
+    if spec.family == "circuit_patching" or spec.parameters.get("runner") == "circuit_patching":
+        return CircuitPatchingExperiment()
+    if spec.family == "cross_model_representation_probe":
+        return CrossModelRepresentationProbeExperiment()
     if spec.parameters.get("runner") == "activation_capture":
         return ActivationCaptureExperiment()
     if spec.parameters.get("runner") == "transformerlens_smoke":

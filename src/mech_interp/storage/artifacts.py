@@ -25,14 +25,18 @@ class ArtifactStore:
 
     def write_json(self, run_id: int, name: str, payload: dict[str, Any]) -> ArtifactRecord:
         path = self.run_dir(run_id) / name
-        with path.open("w", encoding="utf-8") as artifact_file:
+        tmp_path = path.with_name(f".{path.name}.tmp")
+        with tmp_path.open("w", encoding="utf-8") as artifact_file:
             json.dump(payload, artifact_file, indent=2, sort_keys=True)
             artifact_file.write("\n")
+        tmp_path.replace(path)
         return self._record(name=name, path=path, media_type="application/json")
 
     def write_text(self, run_id: int, name: str, text: str) -> ArtifactRecord:
         path = self.run_dir(run_id) / name
-        path.write_text(text, encoding="utf-8")
+        tmp_path = path.with_name(f".{path.name}.tmp")
+        tmp_path.write_text(text, encoding="utf-8")
+        tmp_path.replace(path)
         return self._record(name=name, path=path, media_type="text/plain")
 
     def write_npz(
@@ -67,7 +71,9 @@ class ArtifactStore:
         }
 
         path = self.run_dir(run_id) / name
-        np.savez(path, **cast(Any, payload))
+        tmp_path = path.with_name(f".{path.name}.tmp.npz")
+        np.savez(tmp_path, **cast(Any, payload))
+        tmp_path.replace(path)
         return self._record(
             name=name,
             path=path,

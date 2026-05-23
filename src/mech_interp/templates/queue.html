@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Queue</h1>
+<div class="actions">
+  <form method="post" action="/queue/enqueue" hx-post="/queue/enqueue" hx-target="body"><button type="submit">Enqueue Specs</button></form>
+  <form method="post" action="/queue/run-once" hx-post="/queue/run-once" hx-target="body"><button type="submit">Run Once</button></form>
+  <form method="post" action="/queue/requeue-stale" hx-post="/queue/requeue-stale" hx-target="body">
+    <input name="seconds" type="number" value="3600" min="1">
+    <button type="submit">Requeue Stale</button>
+  </form>
+</div>
+<section>
+  <h2>Items</h2>
+  <table>
+    <tr><th>ID</th><th>Spec</th><th>Status</th><th>Retries</th><th>Phase</th><th>Run</th><th>Actions</th><th>Error</th></tr>
+    {% for item in queue_items %}
+    <tr>
+      <td>{{ item.id }}</td>
+      <td>{{ item.spec_name }}</td>
+      <td>{{ item.status.value }}</td>
+      <td>{{ item.retry_count }}</td>
+      <td>{{ item.current_phase or "-" }}</td>
+      <td>{{ item.run_id or "-" }}</td>
+      <td>
+        <form method="post" action="/queue/pause/{{ item.id }}"><button type="submit">Pause</button></form>
+        <form method="post" action="/queue/resume/{{ item.id }}"><button type="submit">Resume</button></form>
+        <form method="post" action="/queue/requeue/{{ item.id }}"><button type="submit">Requeue</button></form>
+        <form method="post" action="/queue/cancel/{{ item.id }}"><button type="submit">Cancel</button></form>
+      </td>
+      <td>{{ item.error or "-" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+<section>
+  <h2>Available Specs</h2>
+  <table>
+    <tr><th>Name</th><th>Family</th><th>Backend</th></tr>
+    {% for spec in specs %}
+    <tr><td>{{ spec.name }}</td><td>{{ spec.family }}</td><td>{{ spec.backend }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

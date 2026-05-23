@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Runs</h1>
+<table>
+  <tr><th>Run</th><th>Spec</th><th>Family</th><th>Backend</th><th>Status</th></tr>
+  {% for run in runs %}
+  <tr><td><a href="/runs/{{ run.id }}">{{ run.id }}</a></td><td>{{ run.spec_name }}</td><td>{{ run.family }}</td><td>{{ run.backend }}</td><td>{{ run.status.value }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

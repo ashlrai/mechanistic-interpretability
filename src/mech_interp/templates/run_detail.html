@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+{% if run %}
+<h1>Run {{ run.id }}</h1>
+<p class="muted">{{ run.spec_name }} / {{ run.family }} / {{ run.status.value }}</p>
+<p><a class="button" href="/artifacts/browser/{{ run.id }}">Browse Artifacts</a></p>
+{% else %}
+<h1>Run Missing</h1>
+{% endif %}
+<section>
+  <h2>Result</h2>
+  {% if result %}
+  <table>
+    <tr><th>Status</th><td>{{ result.status.value }}</td></tr>
+    <tr><th>Notes</th><td>{{ result.notes }}</td></tr>
+    <tr><th>Metrics</th><td><pre>{{ result.metrics }}</pre></td></tr>
+    <tr><th>Artifacts</th><td>
+      {% for artifact in artifact_links %}
+      <div>
+        {{ artifact.name }}:
+        {% if artifact.href %}<a href="{{ artifact.href }}">{{ artifact.path }}</a>{% else %}{{ artifact.path }}{% endif %}
+      </div>
+      {% endfor %}
+    </td></tr>
+  </table>
+  {% else %}
+  <p>No result has been recorded.</p>
+  {% endif %}
+</section>
+<section><h2>Spec</h2><pre>{{ spec }}</pre></section>
+<section><h2>Manifest</h2><pre>{{ manifest or "Manifest unavailable." }}</pre></section>
+<section><h2>Markdown Preview</h2><pre>{{ report_preview }}</pre></section>
+{% endblock %}
