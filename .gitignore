@@ -15,6 +15,7 @@ data/*
 !data/prompts/
 !data/prompts/**
 artifacts/
+experiments/proposed/
 *.sqlite
 *.sqlite3
 *.db

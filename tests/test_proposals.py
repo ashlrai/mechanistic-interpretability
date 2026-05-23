@@ -27,6 +27,23 @@ def test_propose_followups_writes_valid_specs_and_manifest(
                         "recovery_fraction": 0.9,
                     }
                 ],
+                "runs": [
+                    {
+                        "run_id": 7,
+                        "spec": {
+                            "backend": "transformerlens",
+                            "parameters": {
+                                "model": "gpt2-small",
+                                "source_prompt": "clean prompt",
+                                "target_prompt": "corrupted prompt",
+                                "answer_tokens": {
+                                    "correct": " clean",
+                                    "incorrect": " corrupt",
+                                },
+                            },
+                        },
+                    }
+                ],
                 "failed_runs": [],
             }
         ),
@@ -43,5 +60,11 @@ def test_propose_followups_writes_valid_specs_and_manifest(
     spec = load_experiment_spec(result.spec_paths[0])
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     assert spec.family == "circuit_patching"
+    assert spec.parameters["source_prompt"] == "clean prompt"
+    assert spec.parameters["target_prompt"] == "corrupted prompt"
+    assert spec.parameters["answer_tokens"] == {
+        "correct": " clean",
+        "incorrect": " corrupt",
+    }
     assert manifest["proposals"][0]["source_run_ids"] == [7]
     assert manifest["guardrail"] == "Generated specs are not executed automatically."

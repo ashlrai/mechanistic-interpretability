@@ -3,8 +3,8 @@ family: cross_model_representation_probe
 backend: transformerlens
 description: Smoke test for a local cross-model activation representation probe.
 parameters:
-  source_model: tiny-stories-1M
-  target_model: tiny-stories-2M
+  source_model: roneneldan/TinyStories-1M
+  target_model: roneneldan/TinyStories-3M
   source_hook_site: blocks.0.hook_resid_pre
   target_hook_site: blocks.0.hook_resid_pre
   ridge_alpha: 1.0

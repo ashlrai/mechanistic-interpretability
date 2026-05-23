@@ -37,10 +37,12 @@ def propose_followups(
     output.mkdir(parents=True, exist_ok=True)
 
     proposals: list[dict[str, Any]] = []
+    specs_by_run_id = _specs_by_run_id(summary)
     for index, site in enumerate(summary.get("top_circuit_patching_sites", [])[:limit], start=1):
         if not isinstance(site, dict):
             continue
-        spec = _proposal_from_site(index, site)
+        source_spec = specs_by_run_id.get(int(site["run_id"])) if "run_id" in site else None
+        spec = _proposal_from_site(index, site, source_spec)
         spec_path = output / f"{spec['name']}.yaml"
         spec_path.write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
         load_experiment_spec(spec_path)
@@ -99,21 +101,49 @@ def _read_summary(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _proposal_from_site(index: int, site: dict[str, Any]) -> dict[str, Any]:
+def _specs_by_run_id(summary: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    runs = summary.get("runs", [])
+    specs: dict[int, dict[str, Any]] = {}
+    if not isinstance(runs, list):
+        return specs
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        run_id = run.get("run_id")
+        spec = run.get("spec")
+        if isinstance(run_id, int) and isinstance(spec, dict):
+            specs[run_id] = spec
+    return specs
+
+
+def _proposal_from_site(
+    index: int,
+    site: dict[str, Any],
+    source_spec: dict[str, Any] | None,
+) -> dict[str, Any]:
     hook_site = str(site.get("hook_site") or "blocks.0.hook_resid_pre")
     source_name = str(site.get("spec_name") or "unknown").replace("_", "-")
+    source_parameters = source_spec.get("parameters", {}) if source_spec is not None else {}
+    if not isinstance(source_parameters, dict):
+        source_parameters = {}
+    prompts = _source_prompts(source_parameters)
+    answer_tokens = _answer_tokens(source_parameters)
     return {
         "name": f"proposed-circuit-followup-{index:04d}",
         "family": "circuit_patching",
-        "backend": "transformerlens",
+        "backend": str(source_spec.get("backend", "transformerlens"))
+        if source_spec is not None
+        else "transformerlens",
         "description": f"Follow-up causal retest for {source_name} at {hook_site}.",
         "parameters": {
-            "model": "gpt2-small",
-            "source_prompt": "Replace with the clean prompt from the source run.",
-            "target_prompt": "Replace with the corrupted prompt from the source run.",
-            "answer_tokens": {"correct": " yes", "incorrect": " no"},
+            "model": str(source_parameters.get("model", "gpt2-small")),
+            "source_prompt": prompts["source_prompt"],
+            "target_prompt": prompts["target_prompt"],
+            "answer_tokens": answer_tokens,
             "hook_sites": [hook_site],
-            "sequence_length": 32,
+            "target_position": int(source_parameters.get("target_position", -1)),
+            "patch_position": int(source_parameters.get("patch_position", -1)),
+            "sequence_length": int(source_parameters.get("sequence_length", 32)),
             "resource_policy": {"max_activation_fraction": 0.25},
             "artifact_policy": {
                 "retain_activation_tensors": False,
@@ -121,3 +151,36 @@ def _proposal_from_site(index: int, site: dict[str, Any]) -> dict[str, Any]:
             },
         },
     }
+
+
+def _source_prompts(parameters: dict[str, Any]) -> dict[str, str]:
+    prompt_pairs = parameters.get("prompt_pairs")
+    if isinstance(prompt_pairs, list) and prompt_pairs and isinstance(prompt_pairs[0], dict):
+        first_pair = prompt_pairs[0]
+        clean = first_pair.get("clean_prompt")
+        corrupted = first_pair.get("corrupted_prompt")
+        if isinstance(clean, str) and isinstance(corrupted, str):
+            return {"source_prompt": clean, "target_prompt": corrupted}
+    clean = parameters.get("source_prompt") or parameters.get("clean_prompt")
+    corrupted = parameters.get("target_prompt") or parameters.get("corrupted_prompt")
+    return {
+        "source_prompt": str(clean or "The Eiffel Tower is in Paris"),
+        "target_prompt": str(corrupted or "The Eiffel Tower is in Rome"),
+    }
+
+
+def _answer_tokens(parameters: dict[str, Any]) -> dict[str, str]:
+    prompt_pairs = parameters.get("prompt_pairs")
+    if isinstance(prompt_pairs, list) and prompt_pairs and isinstance(prompt_pairs[0], dict):
+        first_pair = prompt_pairs[0]
+        correct = first_pair.get("correct_token")
+        incorrect = first_pair.get("incorrect_token")
+        if isinstance(correct, str) and isinstance(incorrect, str):
+            return {"correct": correct, "incorrect": incorrect}
+    answer_tokens = parameters.get("answer_tokens")
+    if isinstance(answer_tokens, dict):
+        correct = answer_tokens.get("correct")
+        incorrect = answer_tokens.get("incorrect")
+        if isinstance(correct, str) and isinstance(incorrect, str):
+            return {"correct": correct, "incorrect": incorrect}
+    return {"correct": " Paris", "incorrect": " Rome"}

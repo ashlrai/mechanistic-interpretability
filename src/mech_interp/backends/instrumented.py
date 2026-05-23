@@ -81,9 +81,10 @@ class TransformerLensBackend:
 
                 def patch_hook(
                     activation: Any,
-                    _hook: Any,
+                    _hook: Any = None,
                     clean_value: Any = clean_activation,
                     position: int = patch_position,
+                    **_kwargs: Any,
                 ) -> Any:
                     patched_activation = activation.clone()
                     patched_activation[:, position, ...] = clean_value[:, position, ...]

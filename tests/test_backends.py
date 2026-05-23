@@ -157,7 +157,7 @@ def test_transformerlens_backend_runs_activation_patching_with_fake_model(
             assert prompt == "corrupted"
             hook_site, hook_fn = fwd_hooks[0]
             assert hook_site == "blocks.0.hook_resid_pre"
-            patched = hook_fn(FakeActivation(0.0), None)
+            patched = hook_fn(FakeActivation(0.0), hook=SimpleNamespace(name=hook_site))
             assert patched.value == 12.0
             return np.array([[[0.0, 4.0, 2.0]]])
 
