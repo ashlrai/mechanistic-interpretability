@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -14,20 +15,32 @@ from mech_interp.types import ArtifactRecord, ExperimentRun
 METADATA_ARRAY_NAME = "__metadata__"
 
 
+_RUN_DIR_RE = re.compile(r"^run-\d{6}$")
+
+
 def resolve_run_artifact_dir(run: ExperimentRun) -> Path:
     """Return the artifact directory for a run.
 
-    Always trusts ``run.artifact_dir`` as-is.  The caller (orchestrator/runner)
-    is responsible for passing the correctly-named directory; this helper must
-    not second-guess it by appending a nested ``run-NNNNNN`` sub-directory.
+    Two valid input conventions:
 
-    The old five-file ``_run_artifact_dir`` helper had a branching check that
-    would append a nested sub-directory when the passed path did *not* already
-    end in ``run-NNNNNN``, causing artifacts to land at
-    ``parent/run-000002/run-000001/circuit.json`` when a flat ``tmp_path`` was
-    supplied (e.g. in tests or closed-loop demos).
+    1. The caller passes a directory whose basename matches ``run-NNNNNN``
+       (e.g. the parent ``artifacts/run-000031`` set up by SQLite create_run, or
+       a tmp dir in tests deliberately named to match). Use it as-is.
+    2. The caller passes a parent directory (no ``run-NNNNNN`` suffix), in
+       which case we append ``run-{run.id:06d}`` so artifacts land beside the
+       runner-written manifest. This is the legacy convention from the old
+       five-file ``_run_artifact_dir`` helpers, and the orchestrator/runner
+       depends on it (it passes ``run.artifact_dir = Path("artifacts")``).
+
+    We deliberately do NOT auto-nest when the caller already provided a
+    ``run-NNNNNN``-shaped directory, even if the embedded id differs from
+    ``run.id``. That guards against the demo-script bug where passing
+    ``run-000002`` for ``run.id == 1`` produced a nested
+    ``run-000002/run-000001/`` tree.
     """
-    return run.artifact_dir
+    if _RUN_DIR_RE.match(run.artifact_dir.name):
+        return run.artifact_dir
+    return run.artifact_dir / f"run-{run.id:06d}"
 
 
 class ArtifactStore:

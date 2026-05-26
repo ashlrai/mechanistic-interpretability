@@ -250,8 +250,16 @@ def _activations_from_corpus(
         f"doc_{i}: {doc[:60]}" for i, doc in enumerate(documents)
     ]
 
-    # tokenize_corpus needs a HookedTransformer; access via backend
+    # tokenize_corpus needs a HookedTransformer; the backend may not have
+    # loaded the model yet (the runner path constructs a fresh backend and
+    # relies on lazy loading inside capture_activations). Call load() if the
+    # backend exposes it but hasn't been used yet.
     model = getattr(backend, "model", None)
+    if model is None:
+        loader = getattr(backend, "load", None)
+        if callable(loader):
+            loader()
+            model = getattr(backend, "model", None)
     if model is None:
         raise AttributeError(
             "Backend has no 'model' attribute; cannot tokenize corpus. "

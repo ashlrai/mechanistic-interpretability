@@ -177,6 +177,8 @@ def test_mps_sae_training_converges(mps_backend: object, tmp_path: Path) -> None
         created_at=utc_now(),
     )
 
+    from mech_interp.backends.instrumented import TransformerLensBackend
+    assert isinstance(mps_backend, TransformerLensBackend)
     result = PolysemanticitySAEExperiment(backend=mps_backend).run(spec, run)
 
     assert result.status == RunStatus.SUCCEEDED, f"SAE run failed: {result.notes}"
@@ -232,6 +234,8 @@ def test_mps_acdc_lite_produces_nonzero_importance(
         created_at=utc_now(),
     )
 
+    from mech_interp.backends.instrumented import TransformerLensBackend
+    assert isinstance(mps_backend, TransformerLensBackend)
     result = ACDCLiteExperiment(backend=mps_backend).run(spec, run)
 
     assert result.status == RunStatus.SUCCEEDED, f"ACDC run failed: {result.notes}"

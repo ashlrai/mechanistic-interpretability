@@ -212,25 +212,28 @@ def test_resolve_run_artifact_dir_returns_artifact_dir_as_is(tmp_path: Path) -> 
         created_at=datetime(2024, 1, 1, tzinfo=UTC),
     )
     result = resolve_run_artifact_dir(run)
-    # Always trusts the caller — no sub-dir appended.
-    assert result == tmp_path
+    # Parent dir (no run-NNNNNN suffix) → helper appends run-{id:06d} so SAE /
+    # ACDC artifacts land beside the runner-written manifest.json. This is the
+    # convention the orchestrator depends on.
+    assert result == tmp_path / "run-000001"
 
 
-def test_resolve_run_artifact_dir_flat_path_does_not_nest(tmp_path: Path) -> None:
-    """Passing a flat tmp dir must not produce parent/run-000001/run-000001."""
+def test_resolve_run_artifact_dir_does_not_double_nest(tmp_path: Path) -> None:
+    """When the caller already passed a run-NNNNNN dir, don't append another."""
+    named = tmp_path / "run-000005"
     run = ExperimentRun(
-        id=1,
+        id=5,
         spec_name="test",
         family="circuit_patching",
         backend="transformerlens",
         status=RunStatus.PLANNED,
-        artifact_dir=tmp_path,
+        artifact_dir=named,
         created_at=datetime(2024, 1, 1, tzinfo=UTC),
     )
     result = resolve_run_artifact_dir(run)
-    # Must not equal tmp_path / "run-000001"
-    assert result == tmp_path
-    assert result != tmp_path / "run-000001"
+    # Pre-named dir is used as-is — guards against parent/run-000005/run-000005.
+    assert result == named
+    assert result != named / "run-000005"
 
 
 def test_resolve_run_artifact_dir_named_dir(tmp_path: Path) -> None:
