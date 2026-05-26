@@ -1,0 +1,28 @@
+name: acdc-edge-gpt2-factual
+family: acdc_edge
+backend: transformerlens
+description: >-
+  Edge-level automatic circuit discovery on gpt2-small for factual recall.
+  Scores every directed edge (src→dst) between attention heads and MLP blocks
+  across layers 0-2 using KL-divergence-weighted src ablation, then iteratively
+  prunes edges below tau. Output: ranked edges + GraphViz dot file.
+parameters:
+  model: gpt2-small
+  prompt_pairs:
+    - id: capital-france
+      clean_prompt: "The capital of France is Paris"
+      corrupted_prompt: "The capital of France is Rome"
+      correct_token: " Paris"
+      incorrect_token: " Rome"
+    - id: capital-italy
+      clean_prompt: "The capital of Italy is Rome"
+      corrupted_prompt: "The capital of Italy is Paris"
+      correct_token: " Rome"
+      incorrect_token: " Paris"
+  layers: [0, 1, 2]
+  max_edges: 200
+  tau: 0.02
+  max_iterations: 5
+  ablation_type: mean
+  seed: 42
+  device: cpu
