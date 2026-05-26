@@ -10,6 +10,7 @@ interpretability lab. Keep each stage runnable before moving to the next.
 - ✅ Add provider health checks for Ollama and LM Studio.
 - ✅ Add a TransformerLens smoke path that does not require heavyweight model downloads in tests.
 - ✅ Keep local checks green on every push.
+- ✅ PR-only CI via GitHub Actions (`check.sh`: pytest fast tests, ruff, mypy, `mech validate`).
 
 ## Stage 2: TransformerLens Execution — DONE
 

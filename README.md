@@ -280,7 +280,10 @@ uv run --group dev --extra interp mech run \
 
 ## Local-First Verification
 
-This repo intentionally does not use GitHub Actions. Local checks are the source of truth:
+Local checks are the source of truth for main-branch pushes. A minimal GitHub Actions workflow
+runs `bash scripts/check.sh` on pull requests (fast tests, ruff, mypy, `mech validate`) to give
+external contributors an automated gate. Integration tests that require model downloads are
+excluded from CI.
 
 ```bash
 bash scripts/check.sh
