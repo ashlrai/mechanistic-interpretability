@@ -72,13 +72,19 @@ def tokenize_corpus(
     *,
     seq_len: int = 128,
     max_tokens: int | None = None,
-) -> torch.Tensor:
-    """Tokenize a list of documents into a fixed-length token tensor.
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Tokenize a list of documents into a fixed-length token tensor with a padding mask.
 
     Each document is tokenized independently and either truncated to
-    ``seq_len`` tokens or zero-padded on the right if shorter. The
-    resulting tensor has shape ``(n_docs, seq_len)`` where ``n_docs <=
-    len(documents)`` (documents that produce zero tokens are skipped).
+    ``seq_len`` tokens or right-padded with the EOS/pad token if shorter.
+    The resulting token tensor has shape ``(n_docs, seq_len)`` where
+    ``n_docs <= len(documents)`` (documents that produce zero tokens are
+    skipped).
+
+    A boolean mask of the same shape is returned alongside the token tensor.
+    Mask values are ``True`` for real tokens and ``False`` for padding
+    positions, so SAE training and other downstream consumers can exclude
+    padded positions.
 
     If ``max_tokens`` is set the tensor is capped so that
     ``n_docs * seq_len <= max_tokens`` (i.e. at most
@@ -99,8 +105,10 @@ def tokenize_corpus(
 
     Returns
     -------
-    torch.Tensor
-        Integer tensor of shape ``(n_docs, seq_len)``.
+    tuple[torch.Tensor, torch.Tensor]
+        ``(tokens, mask)`` where ``tokens`` is an integer tensor of shape
+        ``(n_docs, seq_len)`` and ``mask`` is a boolean tensor of the same
+        shape — ``True`` for real tokens, ``False`` for padding.
     """
     import torch
 
@@ -125,7 +133,9 @@ def tokenize_corpus(
         max_docs = max_tokens // seq_len
 
     rows: list[torch.Tensor] = []
+    masks: list[torch.Tensor] = []
     skipped = 0
+    pad_id: int = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
     for doc in documents:
         if max_docs is not None and len(rows) >= max_docs:
             break
@@ -133,10 +143,13 @@ def tokenize_corpus(
         if not encoded:
             skipped += 1
             continue
+        real_len = min(len(encoded), seq_len)
         token_ids = encoded[:seq_len]
         if len(token_ids) < seq_len:
-            token_ids = token_ids + [tokenizer.pad_token_id or 0] * (seq_len - len(token_ids))
+            token_ids = token_ids + [pad_id] * (seq_len - len(token_ids))
+        row_mask = [True] * real_len + [False] * (seq_len - real_len)
         rows.append(torch.tensor(token_ids, dtype=torch.long))
+        masks.append(torch.tensor(row_mask, dtype=torch.bool))
 
     if skipped:
         logger.debug("tokenize_corpus: skipped %d documents that produced no tokens", skipped)
@@ -146,7 +159,7 @@ def tokenize_corpus(
             "tokenize_corpus: all documents produced empty token sequences"
         )
 
-    return torch.stack(rows, dim=0)
+    return torch.stack(rows, dim=0), torch.stack(masks, dim=0)
 
 
 # ---------------------------------------------------------------------------

@@ -266,13 +266,14 @@ def _activations_from_corpus(
             "Only the TransformerLens backend supports corpus_path."
         )
 
-    token_tensor = tokenize_corpus(
+    token_tensor, pad_mask = tokenize_corpus(
         model,
         documents,
         seq_len=config.seq_len,
         max_tokens=config.max_tokens,
     )
     # token_tensor: (n_docs, seq_len)  int64
+    # pad_mask:     (n_docs, seq_len)  bool  — True = real token, False = padding
     n_docs_used = token_tensor.shape[0]
     labels_used = doc_labels[:n_docs_used]
 
@@ -290,12 +291,32 @@ def _activations_from_corpus(
             f"Backend did not return activations for hook site '{config.hook_site}'."
         )
     activation_tensor = captured[config.hook_site]
-    flat, _ = _flatten_with_prompt_map(activation_tensor, text_inputs)
+    flat_all, _ = _flatten_with_prompt_map(activation_tensor, text_inputs)
 
     # Build token-level label list using doc labels (not raw text) for readability
     shape = tuple(activation_tensor.shape)
     seq = shape[1] if len(shape) == 3 else 1
-    prompt_for_token = [labels_used[i] for i in range(n_docs_used) for _ in range(seq)]
+    prompt_for_token_all = [labels_used[i] for i in range(n_docs_used) for _ in range(seq)]
+
+    # Filter out padded positions so SAE training never sees pad-token activations.
+    # pad_mask is (n_docs, seq_len); flatten to (n_docs*seq_len,) to index flat_all.
+    flat_mask = pad_mask[:n_docs_used].reshape(-1)
+    if flat_mask.shape[0] != flat_all.shape[0]:
+        # Fallback: shapes diverged (e.g. backend re-tokenised to a different length);
+        # skip mask filtering and log a warning so the caller can investigate.
+        logger.warning(
+            "_activations_from_corpus: pad_mask length %d does not match activation "
+            "count %d; skipping mask filtering.",
+            flat_mask.shape[0],
+            flat_all.shape[0],
+        )
+        return flat_all, prompt_for_token_all
+
+    import torch as _torch
+
+    real_indices = _torch.where(flat_mask)[0]
+    flat = flat_all[real_indices]
+    prompt_for_token = [prompt_for_token_all[i] for i in real_indices.tolist()]
 
     return flat, prompt_for_token
 

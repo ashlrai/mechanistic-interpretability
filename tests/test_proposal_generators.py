@@ -186,6 +186,7 @@ def test_registry_covers_expected_families() -> None:
         "acdc_lite",
         "acdc_edge",
         "refusal_direction",
+        "sae_cross_model",
     }
 
 

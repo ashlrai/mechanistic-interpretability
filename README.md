@@ -216,10 +216,16 @@ into the placeholder for scratch runs, set `MECH_INTERP_ALLOW_PLACEHOLDER=1` in 
 - **acdc_lite** — node-level automatic circuit discovery (Conmy et al., 2023). Scores every
   (layer, head) attention node and (layer, MLP) node by ablation impact, prunes below a threshold,
   reports faithfulness and a GraphViz dot (`experiments/acdc_lite.yaml`).
+- **acdc_edge** — full edge-level ACDC (Conmy et al., 2023). Scores individual
+  (source-hook → dest-hook) edges rather than whole nodes; produces a sparser, more precise
+  circuit graph (`experiments/acdc_edge.yaml`).
+- **refusal_direction** — extracts the principal refusal direction from an instruct model's
+  residual stream using contrastive harmful/harmless prompt pairs, then measures how much ablating
+  that direction recovers refusal behaviour (Arditi et al., 2024).
 - **cross_model_representation_probe** — ridge regression across model pairs.
 - **activation_capture** / **transformerlens_smoke** runners (via `parameters.runner`).
 
-### Agentic proposal loop
+### Agentic loop
 
 After a run completes, family-specific `ProposalGenerator`s emit follow-up specs:
 
@@ -230,6 +236,22 @@ After a run completes, family-specific `ProposalGenerator`s emit follow-up specs
 
 Every generated spec is round-tripped through the YAML validator before being written to disk, so
 malformed proposals fail immediately rather than at queue time.
+
+To close the loop end-to-end (propose + execute + recurse):
+
+```bash
+uv run --group dev mech iterate-from-run --family polysemanticity_sae \
+  --artifact-dir artifacts/run-000042 --max-depth 2
+```
+
+Use `--dry-run` to generate specs without executing them (equivalent to `propose-from-run`).
+
+Archive stale placeholder runs that pollute the cockpit:
+
+```bash
+uv run --group dev mech archive-runs --before-run-id N --dry-run   # preview
+uv run --group dev mech archive-runs --before-run-id N             # execute
+```
 
 ## Prompt Datasets
 
@@ -278,6 +300,23 @@ uv run --group dev --extra interp mech run \
   --name activation-capture-smoke
 ```
 
+### Cockpit
+
+The local research cockpit serves a FastAPI/HTMX UI at `http://localhost:8000`:
+
+```bash
+uv run --group dev mech cockpit
+```
+
+Key routes:
+
+- `/runs/<id>/features` — SAE feature explorer: top-activating prompts, dead-feature rate,
+  and reconstruction MSE for a `polysemanticity_sae` run.
+- `/runs/<id>/circuit` — ACDC circuit viewer: surviving nodes/edges, faithfulness score,
+  and an embedded GraphViz dot for `acdc_lite` and `acdc_edge` runs.
+- `/runs/<id>` — Reproducibility panel: environment fingerprint (torch version, seed,
+  `uv.lock` SHA), result notes, and artifact manifest for any run family.
+
 ## Local-First Verification
 
 Local checks are the source of truth for main-branch pushes. A minimal GitHub Actions workflow
@@ -287,6 +326,12 @@ excluded from CI.
 
 ```bash
 bash scripts/check.sh
+```
+
+To also run integration tests locally (requires model downloads):
+
+```bash
+RUN_INTEGRATION_TESTS=1 bash scripts/check.sh
 ```
 
 ## Experiment Roadmap

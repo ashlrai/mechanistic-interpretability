@@ -32,6 +32,10 @@ interpretability lab. Keep each stage runnable before moving to the next.
 - ✅ **ACDC-lite**: node-level automatic circuit discovery (Conmy et al., 2023) — scores every
   (layer, head) attention node and (layer, MLP) node by ablation logit-diff impact, prunes
   below a threshold, and reports faithfulness + GraphViz dot.
+- ✅ **Edge-level ACDC**: full edge-level circuit discovery (Conmy et al., 2023) — scores
+  individual (source-hook → dest-hook) edges for a sparser, higher-resolution circuit graph.
+- ✅ **Refusal direction**: extracts the principal refusal direction from instruct-model
+  residual streams via contrastive prompt pairs and measures ablation impact (Arditi et al., 2024).
 - ✅ **Cross-model representation probe**: ridge regression across model pairs.
 
 ## Stage 4: Local Scale — IN PROGRESS
@@ -43,22 +47,27 @@ interpretability lab. Keep each stage runnable before moving to the next.
 - ◻︎ Resource planning for batch size, activation retention, dtype, and model size on
   Apple Silicon (MPS) is partially scaffolded — needs validation on instruct-tuned models.
 
-## Stage 5: Agentic Research Loop — IN PROGRESS
+## Stage 5: Agentic Research Loop — DONE
 
 - ✅ Multi-family `ProposalGenerator` registry. Each family declares its own follow-up
   strategy (SAE → circuit_patching probes on top features; ACDC-lite → activation_capture
   over surviving nodes).
 - ✅ `mech propose-from-run` CLI for per-run follow-up generation.
 - ✅ Generated specs round-trip through the registry validator before they're queued.
-- ◻︎ Closed-loop automation (run → propose → enqueue → run) is wired but not the default
-  flow; users still execute generated specs manually.
+- ✅ `mech iterate-from-run` closes the loop end-to-end: generate proposals, execute them,
+  and recurse up to `--max-depth` levels without manual intervention.
+- ✅ `mech archive-runs` removes stale placeholder runs from the cockpit and default listings.
 - ◻︎ Anomaly detection and auto-triage of failed runs.
 
 ## Stage 6: Frontier Directions — FUTURE
 
-- Refusal-direction extraction and representation steering on small instruct models
-  (Qwen2.5-1.5B-Instruct or Gemma-2-2b-it). Requires TransformerLens model loading for
-  modern instruct architectures, which may need a custom HF wrapper on this platform.
-- Crosscoders for base vs fine-tuned model diffing.
-- Auto-interpretability: use an LLM to label SAE features in the loop.
-- Full edge-level ACDC (as opposed to the node-level lite version we ship today).
+- **Corpus-scale SAE training**: stream activations from a large text corpus (e.g. Pile
+  subset) in chunks to train SAEs on millions of tokens without holding the full activation
+  matrix in RAM.
+- **Auto-interpretability**: pipe top-activating prompts per feature through a local LLM
+  (Ollama) to generate human-readable feature labels and confidence scores in the loop.
+- **Multi-model SAE comparison**: train SAEs on aligned hook sites across model families
+  (GPT-2 vs Pythia vs Gemma) and score cross-model feature overlap.
+- **Crosscoders**: base vs fine-tuned model diffing to isolate fine-tuning-specific circuits.
+- **Representation steering**: apply extracted directions (refusal, sentiment, factuality)
+  as activation additions and measure downstream behavioural shift.

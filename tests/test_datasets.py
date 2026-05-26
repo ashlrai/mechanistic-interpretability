@@ -172,7 +172,7 @@ def test_load_text_corpus_bad_text_field(tmp_path: Path) -> None:
 
 
 def test_tokenize_corpus_shape_and_padding() -> None:
-    """tokenize_corpus with a fake tokenizer produces (n_docs, seq_len) int tensor."""
+    """tokenize_corpus with a fake tokenizer produces (n_docs, seq_len) int tensor and mask."""
     import torch
 
     class _FakeTokenizer:
@@ -186,13 +186,31 @@ def test_tokenize_corpus_shape_and_padding() -> None:
         tokenizer = _FakeTokenizer()
 
     docs = ["hello world", "one two three four five", "a"]
-    result = tokenize_corpus(_FakeModel(), docs, seq_len=4)
+    tokens, mask = tokenize_corpus(_FakeModel(), docs, seq_len=4)
 
-    assert result.shape == (3, 4)
-    assert result.dtype == torch.long
-    # Short document "a" (1 token) should be right-padded with 0s
-    assert result[2, 1].item() == 0
-    assert result[2, 2].item() == 0
+    # Token tensor shape and dtype
+    assert tokens.shape == (3, 4)
+    assert tokens.dtype == torch.long
+    # Mask shape and dtype
+    assert mask.shape == (3, 4)
+    assert mask.dtype == torch.bool
+
+    # Short document "a" (1 token) should be right-padded with 0s in tokens
+    assert tokens[2, 1].item() == 0
+    assert tokens[2, 2].item() == 0
+    # Corresponding mask positions should be False (padding)
+    assert mask[2, 0].item() is True   # the one real token
+    assert mask[2, 1].item() is False  # padding
+    assert mask[2, 2].item() is False  # padding
+
+    # Full document "one two three four five" truncated to 4 — all mask positions True
+    assert mask[1].all().item() is True
+
+    # "hello world" — 2 real tokens, 2 padding
+    assert mask[0, 0].item() is True
+    assert mask[0, 1].item() is True
+    assert mask[0, 2].item() is False
+    assert mask[0, 3].item() is False
 
 
 def test_tokenize_corpus_max_tokens_caps_rows() -> None:
@@ -206,10 +224,11 @@ def test_tokenize_corpus_max_tokens_caps_rows() -> None:
         tokenizer = _FakeTokenizer()
 
     docs = [f"doc {i}" for i in range(20)]
-    result = tokenize_corpus(_FakeModel(), docs, seq_len=4, max_tokens=16)
+    tokens, mask = tokenize_corpus(_FakeModel(), docs, seq_len=4, max_tokens=16)
 
     # 16 // 4 = 4 rows maximum
-    assert result.shape[0] == 4
+    assert tokens.shape[0] == 4
+    assert mask.shape == tokens.shape
 
 
 def test_tokenize_corpus_requires_nonempty_docs() -> None:
@@ -226,3 +245,33 @@ def test_tokenize_corpus_requires_nonempty_docs() -> None:
 
     with pytest.raises(ValueError, match="empty token sequences"):
         tokenize_corpus(_FakeModel(), ["   "], seq_len=4)
+
+
+def test_tokenize_corpus_mask_filters_padding() -> None:
+    """Mask True-count equals the number of real (non-padded) tokens per document."""
+    import torch
+
+    class _FakeTokenizer:
+        pad_token_id = 0
+
+        def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+            return list(range(1, len(text.split()) + 1))
+
+    class _FakeModel:
+        tokenizer = _FakeTokenizer()
+
+    docs = ["a b c", "x y", "one two three four five six"]  # 3, 2, 6 tokens; seq_len=4
+    tokens, mask = tokenize_corpus(_FakeModel(), docs, seq_len=4)
+
+    # doc 0: 3 real tokens, 1 pad
+    assert mask[0].sum().item() == 3
+    # doc 1: 2 real tokens, 2 pads
+    assert mask[1].sum().item() == 2
+    # doc 2: 6 tokens but seq_len=4 → truncated → all 4 real
+    assert mask[2].sum().item() == 4
+
+    # Using the mask to index flat activations (simulating SAE use-case)
+    flat_mask = mask.reshape(-1)
+    dummy_acts = torch.ones(len(docs) * 4, 8)
+    real_acts = dummy_acts[flat_mask]
+    assert real_acts.shape[0] == 3 + 2 + 4  # 9 real tokens
