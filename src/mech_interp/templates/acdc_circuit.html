@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ACDC Circuit — Run {{ run.id }}</h1>
+<p class="muted">{{ run.spec_name }} / {{ run.family }} &nbsp;&bull;&nbsp; <a href="/runs/{{ run.id }}">back to run detail</a></p>
+
+<section>
+  <div class="status-grid">
+    <div class="status-card"><span class="muted">Faithfulness</span><strong>{{ "%.4f"|format(circuit.faithfulness) }}</strong></div>
+    <div class="status-card"><span class="muted">Full logit diff</span><strong>{{ "%.4f"|format(circuit.full_logit_diff) }}</strong></div>
+    <div class="status-card"><span class="muted">Pruned logit diff</span><strong>{{ "%.4f"|format(circuit.pruned_logit_diff) }}</strong></div>
+    <div class="status-card"><span class="muted">Nodes kept</span><strong>{{ circuit.nodes_kept }}</strong></div>
+    <div class="status-card"><span class="muted">Nodes pruned</span><strong>{{ circuit.nodes_pruned }}</strong></div>
+  </div>
+
+  {% if dot_source %}
+  <h2>Circuit Graph</h2>
+  <div id="graph-container" style="background:white;border:1px solid #d8dee4;padding:14px;overflow:auto;min-height:200px">
+    <span class="muted" id="graph-loading">Rendering graph&hellip;</span>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/viz.js@2.1.2/viz.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/viz.js@2.1.2/full.render.js"></script>
+  <script>
+  (function() {
+    var dot = {{ dot_source | tojson }};
+    var container = document.getElementById('graph-container');
+    var viz = new Viz();
+    viz.renderSVGElement(dot).then(function(svg) {
+      svg.style.maxWidth = '100%';
+      container.innerHTML = '';
+      container.appendChild(svg);
+    }).catch(function(err) {
+      container.innerHTML = '<span class="muted">Graph render failed: ' + err + '</span>';
+    });
+  })();
+  </script>
+  {% else %}
+  <p class="muted">circuit.dot not found — graph unavailable.</p>
+  {% endif %}
+
+  {% if nodes %}
+  <h2>Top 20 Nodes by Importance</h2>
+  <table>
+    <thead>
+      <tr><th>#</th><th>Node</th><th>Importance</th><th>Pruned</th></tr>
+    </thead>
+    <tbody>
+      {% for node in nodes %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td><code>{{ node.name }}</code></td>
+        <td>{{ "%.4f"|format(node.importance) }}</td>
+        <td>{% if node.pruned %}<span style="color:#b5400a">yes</span>{% else %}&mdash;{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if pruning_history %}
+  <h2>Pruning History</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Step</th>
+        <th>Threshold</th>
+        <th>Nodes kept</th>
+        <th>Faithfulness</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for step in pruning_history %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ "%.4f"|format(step.threshold) if step.threshold is not none else "&mdash;"|safe }}</td>
+        <td>{{ step.nodes_kept if step.nodes_kept is not none else "&mdash;"|safe }}</td>
+        <td>{{ "%.4f"|format(step.faithfulness) if step.faithfulness is not none else "&mdash;"|safe }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,10 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+.badge { display:inline-block; border-radius:4px; padding:1px 6px; font-size:0.75rem; font-weight:600; margin-left:4px; }
+.badge-sae { background:#e8f4fd; color:#1a5a8a; }
+.badge-acdc { background:#f0fae8; color:#2e6b1c; }
+.badge-circuit { background:#fdf3e8; color:#8a4a1a; }
+.badge-probe { background:#f8e8fd; color:#6b1a8a; }
+</style>
 <h1>Runs</h1>
 <table>
   <tr><th>Run</th><th>Spec</th><th>Family</th><th>Backend</th><th>Status</th></tr>
   {% for run in runs %}
-  <tr><td><a href="/runs/{{ run.id }}">{{ run.id }}</a></td><td>{{ run.spec_name }}</td><td>{{ run.family }}</td><td>{{ run.backend }}</td><td>{{ run.status.value }}</td></tr>
+  <tr>
+    <td><a href="/runs/{{ run.id }}">{{ run.id }}</a></td>
+    <td>{{ run.spec_name }}</td>
+    <td>
+      {{ run.family }}
+      {% if run.family == "polysemanticity_sae" %}<span class="badge badge-sae">SAE</span>{% endif %}
+      {% if run.family == "acdc_lite" %}<span class="badge badge-acdc">ACDC</span>{% endif %}
+      {% if run.family == "circuit_patching" %}<span class="badge badge-circuit">circuit</span>{% endif %}
+      {% if run.family == "cross_model_representation_probe" %}<span class="badge badge-probe">probe</span>{% endif %}
+    </td>
+    <td>{{ run.backend }}</td>
+    <td>{{ run.status.value }}</td>
+  </tr>
   {% endfor %}
 </table>
 {% endblock %}

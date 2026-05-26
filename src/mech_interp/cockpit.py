@@ -179,6 +179,7 @@ def create_app(config: AppConfig, experiment_dir: str = "experiments") -> FastAP
         report_preview = _read_text_artifact(
             result.artifacts.get("research_note") if result else None
         )
+        environment = _read_environment(run_id, result, config.project.artifact_dir)
         return templates.TemplateResponse(
             request,
             "run_detail.html",
@@ -188,10 +189,67 @@ def create_app(config: AppConfig, experiment_dir: str = "experiments") -> FastAP
                 "spec": json.dumps(spec, indent=2, sort_keys=True),
                 "manifest": manifest,
                 "report_preview": report_preview,
+                "environment": environment,
                 "artifact_links": _artifact_links(
                     result.artifacts if result else {},
                     config.project.artifact_dir,
                 ),
+            },
+        )
+
+    @app.get("/runs/{run_id}/features", response_class=HTMLResponse)
+    def sae_features(request: Request, run_id: int) -> HTMLResponse:
+        db = store()
+        run = next((item for item in db.list_runs(limit=500) if item.id == run_id), None)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        result = db.get_result(run_id)
+        feature_analysis_path = _find_artifact_path(
+            "feature_analysis",
+            result,
+            config.project.artifact_dir / f"run-{run_id:06d}" / "feature_analysis.json",
+        )
+        raw = _read_json_artifact(
+            str(feature_analysis_path) if feature_analysis_path else None
+        )
+        features, stats = _parse_sae_features(raw)
+        return templates.TemplateResponse(
+            request,
+            "sae_features.html",
+            {"run": run, "features": features, "stats": stats},
+        )
+
+    @app.get("/runs/{run_id}/circuit", response_class=HTMLResponse)
+    def acdc_circuit(request: Request, run_id: int) -> HTMLResponse:
+        db = store()
+        run = next((item for item in db.list_runs(limit=500) if item.id == run_id), None)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        result = db.get_result(run_id)
+        run_dir = config.project.artifact_dir / f"run-{run_id:06d}"
+        circuit_json_path = _find_artifact_path("circuit", result, run_dir / "circuit.json")
+        circuit_dot_path = _find_artifact_path(
+            "circuit_dot", result, run_dir / "circuit.dot"
+        )
+        circuit_data = _read_json_artifact(
+            str(circuit_json_path) if circuit_json_path else None
+        )
+        dot_source: str | None = None
+        if circuit_dot_path and circuit_dot_path.is_file():
+            try:
+                dot_source = circuit_dot_path.read_text(encoding="utf-8")
+            except OSError:
+                pass
+        circuit, nodes, pruning_history = _parse_acdc_circuit(circuit_data)
+        return templates.TemplateResponse(
+            request,
+            "acdc_circuit.html",
+            {
+                "run": run,
+                "circuit": circuit,
+                "dot_source": dot_source,
+                "nodes": nodes,
+                "pruning_history": pruning_history,
             },
         )
 
@@ -445,3 +503,162 @@ def _is_relative_to(path: Path, root: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _find_artifact_path(
+    key: str,
+    result: Any,
+    fallback: Path,
+) -> Path | None:
+    """Return the artifact path from result.artifacts[key], or fallback if it exists."""
+    if result is not None:
+        value = result.artifacts.get(key)
+        if value:
+            p = Path(value)
+            if p.is_file():
+                return p
+    if fallback.is_file():
+        return fallback
+    return None
+
+
+def _read_environment(
+    run_id: int,
+    result: Any,
+    artifact_dir: Path,
+) -> dict[str, Any] | None:
+    """Load environment.json for a run, returning None if absent."""
+    # Check explicit artifact key first, then canonical path.
+    candidate: Path | None = None
+    if result is not None:
+        value = result.artifacts.get("environment")
+        if value:
+            candidate = Path(value)
+    if candidate is None or not candidate.is_file():
+        candidate = artifact_dir / f"run-{run_id:06d}" / "environment.json"
+    try:
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _parse_sae_features(
+    raw: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Parse feature_analysis.json into a flat feature list and summary stats."""
+    if raw is None:
+        return [], {"total": 0, "live": 0, "dead": 0, "mean_per_token": 0.0}
+
+    # Accept either {"features": [...]} or a list at top level.
+    feature_list: list[Any] = []
+    if isinstance(raw.get("features"), list):
+        feature_list = raw["features"]
+    elif isinstance(raw, dict):
+        # Some runs write the array directly under a numeric-keyed dict or
+        # as the root object when it's actually a list stored as dict.
+        feature_list = [raw] if raw.get("feature_index") is not None else list(raw.values())
+
+    normalised: list[dict[str, Any]] = []
+    for item in feature_list:
+        if not isinstance(item, dict):
+            continue
+        normalised.append(
+            {
+                "feature_index": int(item.get("feature_index", 0)),
+                "max_activation": float(item.get("max_activation", 0.0)),
+                "mean_activation": float(item.get("mean_activation", 0.0)),
+                "dead": bool(item.get("dead", False)),
+                "coherence_score": (
+                    float(item["coherence_score"])
+                    if item.get("coherence_score") is not None
+                    else None
+                ),
+                "top_prompts": list(item.get("top_prompts") or []),
+            }
+        )
+
+    # Sort by max_activation descending by default.
+    normalised.sort(key=lambda f: f["max_activation"], reverse=True)
+
+    total = len(normalised)
+    dead_count = sum(1 for f in normalised if f["dead"])
+    live_count = total - dead_count
+    mean_per_token = (
+        float(raw.get("mean_features_per_token", 0.0)) if isinstance(raw, dict) else 0.0
+    )
+
+    stats: dict[str, Any] = {
+        "total": total,
+        "live": live_count,
+        "dead": dead_count,
+        "mean_per_token": mean_per_token,
+    }
+    return normalised, stats
+
+
+def _parse_acdc_circuit(
+    raw: dict[str, Any] | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Parse circuit.json into summary, sorted node list, and pruning history."""
+    if raw is None:
+        empty: dict[str, Any] = {
+            "faithfulness": 0.0,
+            "full_logit_diff": 0.0,
+            "pruned_logit_diff": 0.0,
+            "nodes_kept": 0,
+            "nodes_pruned": 0,
+        }
+        return empty, [], []
+
+    circuit: dict[str, Any] = {
+        "faithfulness": float(raw.get("faithfulness", 0.0)),
+        "full_logit_diff": float(raw.get("full_logit_diff", 0.0)),
+        "pruned_logit_diff": float(raw.get("pruned_logit_diff", 0.0)),
+        "nodes_kept": int(raw.get("nodes_kept", 0)),
+        "nodes_pruned": int(raw.get("nodes_pruned", 0)),
+    }
+
+    # Nodes: accept {"nodes": {"name": {"importance": ..., "pruned": ...}, ...}}
+    # or {"nodes": [{"name": ..., "importance": ..., "pruned": ...}, ...]}
+    raw_nodes = raw.get("nodes", {})
+    nodes: list[dict[str, Any]] = []
+    if isinstance(raw_nodes, dict):
+        for name, info in raw_nodes.items():
+            if not isinstance(info, dict):
+                continue
+            nodes.append(
+                {
+                    "name": str(name),
+                    "importance": float(info.get("importance", 0.0)),
+                    "pruned": bool(info.get("pruned", False)),
+                }
+            )
+    elif isinstance(raw_nodes, list):
+        for item in raw_nodes:
+            if isinstance(item, dict):
+                nodes.append(
+                    {
+                        "name": str(item.get("name", "")),
+                        "importance": float(item.get("importance", 0.0)),
+                        "pruned": bool(item.get("pruned", False)),
+                    }
+                )
+    nodes.sort(key=lambda n: n["importance"], reverse=True)
+    top_nodes = nodes[:20]
+
+    # Pruning history: list of steps
+    raw_history = raw.get("pruning_history", [])
+    pruning_history: list[dict[str, Any]] = []
+    if isinstance(raw_history, list):
+        for step in raw_history:
+            if isinstance(step, dict):
+                pruning_history.append(
+                    {
+                        "threshold": step.get("threshold"),
+                        "nodes_kept": step.get("nodes_kept"),
+                        "faithfulness": step.get("faithfulness"),
+                    }
+                )
+
+    return circuit, top_nodes, pruning_history

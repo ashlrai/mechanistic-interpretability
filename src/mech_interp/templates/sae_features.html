@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>SAE Feature Browser — Run {{ run.id }}</h1>
+<p class="muted">{{ run.spec_name }} / {{ run.family }} &nbsp;&bull;&nbsp; <a href="/runs/{{ run.id }}">back to run detail</a></p>
+
+<section>
+  <div class="status-grid">
+    <div class="status-card"><span class="muted">Total features</span><strong>{{ stats.total }}</strong></div>
+    <div class="status-card"><span class="muted">Live</span><strong>{{ stats.live }}</strong></div>
+    <div class="status-card"><span class="muted">Dead</span><strong>{{ stats.dead }}</strong></div>
+    <div class="status-card"><span class="muted">Mean / token</span><strong>{{ "%.3f"|format(stats.mean_per_token) }}</strong></div>
+  </div>
+
+  <div class="actions">
+    <label>Filter:
+      <select id="filter-sel" onchange="applyFilter()">
+        <option value="all">All</option>
+        <option value="alive">Alive</option>
+        <option value="dead">Dead</option>
+      </select>
+    </label>
+    <label>Sort by:
+      <select id="sort-sel" onchange="applySort()">
+        <option value="max_activation">Max activation</option>
+        <option value="mean_activation">Mean activation</option>
+        <option value="coherence_score">Coherence</option>
+        <option value="feature_index">Index</option>
+      </select>
+    </label>
+  </div>
+
+  <table id="feature-table">
+    <thead>
+      <tr>
+        <th>Index</th>
+        <th>Max act.</th>
+        <th>Mean act.</th>
+        <th>Dead</th>
+        <th>Coherence</th>
+        <th>Top prompt (first)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in features %}
+      <tr class="feature-row {{ 'dead' if f.dead else 'alive' }}"
+          data-index="{{ f.feature_index }}"
+          data-max="{{ f.max_activation }}"
+          data-mean="{{ f.mean_activation }}"
+          data-coherence="{{ f.coherence_score }}"
+          style="cursor:pointer"
+          onclick="toggleDetail(this)">
+        <td>{{ f.feature_index }}</td>
+        <td>{{ "%.4f"|format(f.max_activation) }}</td>
+        <td>{{ "%.4f"|format(f.mean_activation) }}</td>
+        <td>{% if f.dead %}<span style="color:#b5400a">dead</span>{% else %}&mdash;{% endif %}</td>
+        <td>{{ "%.3f"|format(f.coherence_score) if f.coherence_score is not none else "&mdash;"|safe }}</td>
+        <td class="muted" style="max-width:340px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
+          {{ f.top_prompts[0] if f.top_prompts else "" }}
+        </td>
+      </tr>
+      <tr class="detail-row" style="display:none">
+        <td colspan="6">
+          <div style="padding:8px 0">
+            {% if f.top_prompts %}
+            <strong>Top prompts:</strong>
+            <ol style="margin:6px 0 0 20px;padding:0">
+              {% for p in f.top_prompts %}
+              <li><code style="white-space:pre-wrap">{{ p }}</code></li>
+              {% endfor %}
+            </ol>
+            {% else %}
+            <span class="muted">No top prompts recorded.</span>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not features %}
+  <p class="muted">No features found in feature_analysis.json.</p>
+  {% endif %}
+</section>
+
+<script>
+function toggleDetail(row) {
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains('detail-row')) {
+    next.style.display = next.style.display === 'none' ? '' : 'none';
+  }
+}
+
+function applyFilter() {
+  const val = document.getElementById('filter-sel').value;
+  document.querySelectorAll('.feature-row').forEach(function(row) {
+    const detailRow = row.nextElementSibling;
+    if (val === 'all') {
+      row.style.display = '';
+    } else if (val === 'dead') {
+      const show = row.classList.contains('dead');
+      row.style.display = show ? '' : 'none';
+      if (!show && detailRow) detailRow.style.display = 'none';
+    } else {
+      const show = row.classList.contains('alive');
+      row.style.display = show ? '' : 'none';
+      if (!show && detailRow) detailRow.style.display = 'none';
+    }
+  });
+}
+
+function applySort() {
+  const key = document.getElementById('sort-sel').value;
+  const tbody = document.querySelector('#feature-table tbody');
+  const rows = Array.from(tbody.querySelectorAll('.feature-row'));
+  const pairs = rows.map(function(r) {
+    return { row: r, detail: r.nextElementSibling };
+  });
+  pairs.sort(function(a, b) {
+    let va, vb;
+    if (key === 'feature_index') {
+      va = parseInt(a.row.dataset.index, 10);
+      vb = parseInt(b.row.dataset.index, 10);
+      return va - vb;
+    } else if (key === 'max_activation') {
+      va = parseFloat(a.row.dataset.max); vb = parseFloat(b.row.dataset.max);
+    } else if (key === 'mean_activation') {
+      va = parseFloat(a.row.dataset.mean); vb = parseFloat(b.row.dataset.mean);
+    } else {
+      va = parseFloat(a.row.dataset.coherence); vb = parseFloat(b.row.dataset.coherence);
+    }
+    return vb - va;
+  });
+  pairs.forEach(function(p) {
+    tbody.appendChild(p.row);
+    if (p.detail) tbody.appendChild(p.detail);
+  });
+}
+</script>
+{% endblock %}

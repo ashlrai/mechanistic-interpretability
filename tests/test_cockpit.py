@@ -157,6 +157,174 @@ def test_cockpit_artifact_browser_shows_preview_and_metadata(tmp_path: Path) -> 
     assert "ok" in response.text
 
 
+def test_cockpit_sae_features_renders_live_dead_stats(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(name="sae_run", family="polysemanticity_sae", backend="transformerlens")
+    )
+    artifact_store = ArtifactStore(config.project.artifact_dir)
+    feature_data = {
+        "mean_features_per_token": 2.5,
+        "features": [
+            {
+                "feature_index": 0,
+                "max_activation": 3.14,
+                "mean_activation": 1.2,
+                "dead": False,
+                "coherence_score": 0.87,
+                "top_prompts": ["the cat sat", "a dog ran"],
+            },
+            {
+                "feature_index": 1,
+                "max_activation": 0.0,
+                "mean_activation": 0.0,
+                "dead": True,
+                "coherence_score": None,
+                "top_prompts": [],
+            },
+        ],
+    }
+    feat_artifact = artifact_store.write_json(run.id, "feature_analysis.json", feature_data)
+    store.save_result(
+        ExperimentResult(
+            run_id=run.id,
+            status=RunStatus.SUCCEEDED,
+            artifacts={"feature_analysis": str(feat_artifact.path)},
+        )
+    )
+    client = TestClient(create_app(config, experiment_dir=str(tmp_path / "experiments")))
+
+    response = client.get(f"/runs/{run.id}/features")
+
+    assert response.status_code == 200
+    assert "live_count" not in response.text  # rendered as numeric value, not key
+    assert "3.1400" in response.text  # max activation formatted
+    assert "dead" in response.text
+    assert "the cat sat" in response.text
+    assert "2.500" in response.text  # mean_per_token
+
+
+def test_cockpit_acdc_circuit_renders_faithfulness_and_nodes(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(name="acdc_run", family="acdc_lite", backend="transformerlens")
+    )
+    artifact_store = ArtifactStore(config.project.artifact_dir)
+    circuit_data = {
+        "faithfulness": 0.9123,
+        "full_logit_diff": 4.5,
+        "pruned_logit_diff": 4.1,
+        "nodes_kept": 8,
+        "nodes_pruned": 3,
+        "nodes": {
+            "blocks.0.attn.hook_result": {"importance": 1.0, "pruned": False},
+            "blocks.1.mlp.hook_post": {"importance": 0.3, "pruned": True},
+        },
+        "pruning_history": [
+            {"threshold": 0.5, "nodes_kept": 11, "faithfulness": 0.95},
+            {"threshold": 0.7, "nodes_kept": 8, "faithfulness": 0.9123},
+        ],
+    }
+    circuit_artifact = artifact_store.write_json(run.id, "circuit.json", circuit_data)
+    dot_content = 'digraph G { A -> B [label="1.0"]; }'
+    dot_artifact = artifact_store.write_text(run.id, "circuit.dot", dot_content)
+    store.save_result(
+        ExperimentResult(
+            run_id=run.id,
+            status=RunStatus.SUCCEEDED,
+            artifacts={
+                "circuit": str(circuit_artifact.path),
+                "circuit_dot": str(dot_artifact.path),
+            },
+        )
+    )
+    client = TestClient(create_app(config, experiment_dir=str(tmp_path / "experiments")))
+
+    response = client.get(f"/runs/{run.id}/circuit")
+
+    assert response.status_code == 200
+    assert "0.9123" in response.text  # faithfulness
+    assert "blocks.0.attn.hook_result" in response.text
+    assert "digraph G" in response.text  # dot embedded in page
+    assert "0.5000" in response.text  # pruning history threshold
+
+
+def test_cockpit_run_detail_shows_environment_provenance(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(name="env_run", family="polysemanticity_sae", backend="transformerlens")
+    )
+    artifact_store = ArtifactStore(config.project.artifact_dir)
+    env_data = {
+        "seed": 42,
+        "model_name": "gpt2",
+        "torch_version": "2.3.0",
+        "transformer_lens_version": "2.1.0",
+        "numpy_version": "1.26.4",
+        "uv_lock_sha256": "abcdef1234567890abcdef",
+        "platform": "darwin-arm64",
+    }
+    artifact_store.write_json(run.id, "environment.json", env_data)
+    store.save_result(
+        ExperimentResult(
+            run_id=run.id,
+            status=RunStatus.SUCCEEDED,
+            artifacts={},
+        )
+    )
+    client = TestClient(create_app(config, experiment_dir=str(tmp_path / "experiments")))
+
+    response = client.get(f"/runs/{run.id}")
+
+    assert response.status_code == 200
+    assert "42" in response.text  # seed
+    assert "gpt2" in response.text
+    assert "2.3.0" in response.text  # torch
+    assert "abcdef123456" in response.text  # first 12 chars of sha256
+
+
+def test_cockpit_run_detail_shows_missing_provenance_for_legacy_run(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(name="legacy_run", family="polysemanticity", backend="transformerlens")
+    )
+    store.save_result(
+        ExperimentResult(
+            run_id=run.id,
+            status=RunStatus.SUCCEEDED,
+            artifacts={},
+        )
+    )
+    client = TestClient(create_app(config, experiment_dir=str(tmp_path / "experiments")))
+
+    response = client.get(f"/runs/{run.id}")
+
+    assert response.status_code == 200
+    assert "Provenance not captured" in response.text
+
+
+def test_cockpit_runs_list_shows_family_badges(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    store.create_run(
+        ExperimentSpec(name="sae", family="polysemanticity_sae", backend="transformerlens")
+    )
+    store.create_run(
+        ExperimentSpec(name="acdc", family="acdc_lite", backend="transformerlens")
+    )
+    client = TestClient(create_app(config, experiment_dir=str(tmp_path / "experiments")))
+
+    response = client.get("/runs")
+
+    assert response.status_code == 200
+    assert "badge-sae" in response.text
+    assert "badge-acdc" in response.text
+
+
 def _config(tmp_path: Path) -> AppConfig:
     return AppConfig(
         project=ProjectConfig(

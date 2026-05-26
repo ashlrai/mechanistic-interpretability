@@ -3,7 +3,15 @@
 {% if run %}
 <h1>Run {{ run.id }}</h1>
 <p class="muted">{{ run.spec_name }} / {{ run.family }} / {{ run.status.value }}</p>
-<p><a class="button" href="/artifacts/browser/{{ run.id }}">Browse Artifacts</a></p>
+<div class="actions">
+  <a class="button" href="/artifacts/browser/{{ run.id }}">Browse Artifacts</a>
+  {% if run.family == "polysemanticity_sae" %}
+  <a class="button" href="/runs/{{ run.id }}/features">SAE Features</a>
+  {% endif %}
+  {% if run.family == "acdc_lite" %}
+  <a class="button" href="/runs/{{ run.id }}/circuit">Circuit View</a>
+  {% endif %}
+</div>
 {% else %}
 <h1>Run Missing</h1>
 {% endif %}
@@ -27,7 +35,39 @@
   <p>No result has been recorded.</p>
   {% endif %}
 </section>
+
+<section>
+  <h2>Reproducibility
+    <button onclick="toggleSection('env-panel')" style="margin-left:10px;font-size:0.8rem;padding:4px 8px">toggle</button>
+  </h2>
+  <div id="env-panel">
+    {% if environment %}
+    <table style="max-width:640px">
+      <tr>
+        <th>Seed</th>
+        <td><strong style="font-size:1.1rem">{{ environment.seed }}</strong></td>
+      </tr>
+      <tr><th>Model</th><td>{{ environment.model_name or "&mdash;" }}</td></tr>
+      <tr><th>torch</th><td>{{ environment.torch_version or "&mdash;" }}</td></tr>
+      <tr><th>transformer-lens</th><td>{{ environment.transformer_lens_version or "&mdash;" }}</td></tr>
+      <tr><th>numpy</th><td>{{ environment.numpy_version or "&mdash;" }}</td></tr>
+      <tr><th>uv.lock SHA-256</th><td><code>{{ environment.uv_lock_sha256[:12] if environment.uv_lock_sha256 else "&mdash;" }}&hellip;</code></td></tr>
+      {% if environment.platform %}<tr><th>Platform</th><td>{{ environment.platform }}</td></tr>{% endif %}
+    </table>
+    {% else %}
+    <p class="muted">Provenance not captured (legacy run &mdash; environment.json absent).</p>
+    {% endif %}
+  </div>
+</section>
+
 <section><h2>Spec</h2><pre>{{ spec }}</pre></section>
 <section><h2>Manifest</h2><pre>{{ manifest or "Manifest unavailable." }}</pre></section>
 <section><h2>Markdown Preview</h2><pre>{{ report_preview }}</pre></section>
+
+<script>
+function toggleSection(id) {
+  var el = document.getElementById(id);
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+</script>
 {% endblock %}
