@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,6 +17,8 @@ from mech_interp.experiments.acdc_edge import (
     _build_edges,
     _build_nodes,
     _faithfulness,
+    _score_edge,
+    _score_edges_grouped,
     _write_circuit_dot,
     _write_edges_csv,
 )
@@ -306,3 +309,107 @@ def test_dot_empty_edges(tmp_path: Path) -> None:
     content = path.read_text()
     assert "digraph" in content
     assert "}" in content
+
+
+# ---------------------------------------------------------------------------
+# Grouped-scorer equivalence
+# ---------------------------------------------------------------------------
+
+
+def test_score_edges_grouped_matches_per_edge_naive() -> None:
+    """_score_edges_grouped must produce identical scores to the naive loop.
+
+    We use a tiny fake model: a callable that returns fixed logits regardless
+    of input, and a fake ablation that returns different fixed logits.  This
+    lets us verify the math without loading real weights.
+    """
+    import torch
+
+    torch.manual_seed(0)
+    vocab = 50
+    target_pos = -1
+
+    # Two distinct logit tensors: full and one per src (2 unique srcs).
+    full_logits = torch.randn(1, 5, vocab)  # (batch, seq, vocab)
+
+    # Build a tiny 3-layer, 2-head graph (no MLPs).
+    nodes = _build_nodes([0, 1, 2], n_heads=2, include_attention=True, include_mlps=False)
+    edges = _build_edges(nodes)
+    node_map = {n.node_id: n for n in nodes}
+
+    # We need one ablated tensor per unique src node — index by src_id for simplicity.
+    src_ids = list(dict.fromkeys(e.src_id for e in edges))
+    # Assign each unique src its own ablated logits.
+    ablated_by_src: dict[str, Any] = {}
+    rng_logits = [torch.randn(1, 5, vocab) for _ in src_ids]
+    for i, src_id in enumerate(src_ids):
+        ablated_by_src[src_id] = rng_logits[i]
+
+    call_count = 0
+
+    class FakeModel:
+        def run_with_hooks(
+            self, _prompt: object, fwd_hooks: list[tuple[str, object]]
+        ) -> Any:
+            nonlocal call_count
+            call_count += 1
+            # Identify which src node is being ablated from the hook site.
+            hook_site = fwd_hooks[0][0]
+            # Find src node whose hook site matches.
+            for src_id in src_ids:
+                node = node_map[src_id]
+                if node.component == "attn":
+                    expected = f"blocks.{node.layer}.attn.hook_z"
+                else:
+                    expected = f"blocks.{node.layer}.hook_mlp_out"
+                if hook_site == expected:
+                    return ablated_by_src[src_id]
+            return full_logits  # fallback
+
+    fake_model = FakeModel()
+
+    # --- Grouped scorer (optimised path) ---
+    grouped = _score_edges_grouped(
+        fake_model,
+        "dummy prompt",
+        edges,
+        node_map,
+        full_logits,
+        target_pos,
+        ablation_type="zero",
+    )
+    grouped_calls = call_count
+
+    # --- Naive per-edge scorer ---
+    call_count = 0
+    naive: dict[str, float] = {}
+    for edge in edges:
+        src_node = node_map[edge.src_id]
+        naive[edge.edge_id] = _score_edge(
+            fake_model,
+            "dummy prompt",
+            src_node,
+            edge,
+            full_logits,
+            target_pos,
+            0,  # correct_id (unused in KL path)
+            1,  # incorrect_id (unused in KL path)
+            ablation_type="zero",
+        )
+    naive_calls = call_count
+
+    # Grouped should use far fewer forward passes.
+    assert grouped_calls == len(src_ids), (
+        f"Expected {len(src_ids)} grouped calls, got {grouped_calls}"
+    )
+    assert naive_calls == len(edges), (
+        f"Expected {len(edges)} naive calls, got {naive_calls}"
+    )
+    assert grouped_calls < naive_calls
+
+    # Importance values must be numerically identical.
+    for edge in edges:
+        assert grouped[edge.edge_id] == pytest.approx(naive[edge.edge_id], abs=1e-6), (
+            f"Mismatch on {edge.edge_id}: grouped={grouped[edge.edge_id]}, "
+            f"naive={naive[edge.edge_id]}"
+        )

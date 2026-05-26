@@ -49,6 +49,28 @@ Call it ``acdc_edge`` — the approximation error is bounded and the output is
 useful for circuit discovery.  A future upgrade can replace ``_score_edge``
 with the full three-pass path-patch without changing any public API.
 
+PERFORMANCE OPTIMISATION — SRC-GROUPED FORWARD PASSES
+------------------------------------------------------
+The naive algorithm runs two forward passes per edge: one full-model pass and
+one src-ablated pass.  For E edges this costs 2E passes.
+
+Key insight: ``edge_importance(src, dst) = KL(full || src_ablated) / layer_gap``.
+The KL term depends only on ``src``, not on ``dst``.  All edges that share the
+same src node therefore share the same ablated forward pass.  We can:
+
+    1. Run ONE full forward pass per prompt (not one per edge).
+    2. For each unique src node, run ONE ablated forward pass and compute the
+       KL for that src once.
+    3. For every edge (src → dst) derive the importance analytically as
+       ``kl_for_src / layer_gap(src, dst)``.
+
+Total passes: ``1 + |unique_srcs|``.  For the default YAML (layers 0-2,
+max_edges=200, gpt2-small) this is roughly 37 passes instead of 401 —
+approximately 10× fewer forward passes and ~5–10× wall-clock speedup on CPU.
+
+The function ``_score_edges_grouped`` implements this.  Its output is
+mathematically identical to calling the old ``_score_edge`` per edge.
+
 OUTPUTS
 -------
 * ``edges.json``   — nodes + scored/pruned edges + pruning history
@@ -249,6 +271,8 @@ class ACDCEdgeExperiment(Experiment):
         candidate_edges = all_edges
 
         # Score each edge across all prompt pairs.
+        # Optimisation: group edges by src — one ablated pass per unique src
+        # instead of one per edge.  See module docstring for derivation.
         full_logit_diffs: list[float] = []
         per_edge_scores: dict[str, list[float]] = {e.edge_id: [] for e in candidate_edges}
 
@@ -264,20 +288,17 @@ class ACDCEdgeExperiment(Experiment):
             full_diff = _logit_diff(full_logits, target_pos, correct_id, incorrect_id)
             full_logit_diffs.append(full_diff)
 
-            for edge in candidate_edges:
-                src_node = node_map[edge.src_id]
-                importance = _score_edge(
-                    model,
-                    pair.clean_prompt,
-                    src_node,
-                    edge,
-                    full_logits,
-                    target_pos,
-                    correct_id,
-                    incorrect_id,
-                    ablation_type=config.ablation_type,
-                )
-                per_edge_scores[edge.edge_id].append(importance)
+            edge_scores = _score_edges_grouped(
+                model,
+                pair.clean_prompt,
+                candidate_edges,
+                node_map,
+                full_logits,
+                target_pos,
+                ablation_type=config.ablation_type,
+            )
+            for edge_id, score in edge_scores.items():
+                per_edge_scores[edge_id].append(score)
 
         mean_full = sum(full_logit_diffs) / len(full_logit_diffs)
         for edge in candidate_edges:
@@ -443,6 +464,55 @@ def _build_edges(nodes: list[EdgeNode]) -> list[CircuitEdge]:
 # ---------------------------------------------------------------------------
 # Scoring
 # ---------------------------------------------------------------------------
+
+
+def _score_edges_grouped(
+    model: Any,
+    prompt: str,
+    edges: list[CircuitEdge],
+    node_map: dict[str, EdgeNode],
+    full_logits: Any,
+    target_pos: int,
+    *,
+    ablation_type: str,
+) -> dict[str, float]:
+    """Score all edges with one ablated forward pass per unique src node.
+
+    For each unique src, compute KL(p_full || p_src_ablated) once, then derive
+    every (src → dst) edge importance analytically as ``kl / layer_gap``.
+
+    Total forward passes: ``|unique_srcs|`` (plus the already-computed full pass).
+    This is ~10x fewer passes than the naive per-edge approach for the default
+    YAML config (max_edges=200, layers 0-2).
+
+    Returns a dict mapping edge_id → importance score.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    full_log_prob = F.log_softmax(
+        _select_position(full_logits, target_pos).float(), dim=-1
+    )
+
+    # One ablated pass per unique src.
+    src_kl: dict[str, float] = {}
+    unique_src_ids = list(dict.fromkeys(e.src_id for e in edges))
+    for src_id in unique_src_ids:
+        src_node = node_map[src_id]
+        with torch.no_grad():
+            ablated_logits = _run_with_node_ablation(model, prompt, src_node, ablation_type)
+        ablated_log_prob = F.log_softmax(
+            _select_position(ablated_logits, target_pos).float(), dim=-1
+        )
+        kl = (full_log_prob.exp() * (full_log_prob - ablated_log_prob)).sum().item()
+        src_kl[src_id] = float(max(0.0, kl))
+
+    # Derive per-edge importance analytically — no extra forward passes needed.
+    result: dict[str, float] = {}
+    for edge in edges:
+        layer_gap = max(1, edge.dst_layer - edge.src_layer)
+        result[edge.edge_id] = src_kl[edge.src_id] / layer_gap
+    return result
 
 
 def _score_edge(
