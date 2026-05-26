@@ -1,0 +1,36 @@
+name: attribution-patching-factual-recall
+family: attribution_patching
+backend: transformerlens
+description: >
+  First-order attribution patching scan across residual stream and MLP-out at every layer
+  of gpt2-small using three factual-recall prompt pairs.  One forward + one backward pass
+  produces attribution scores for all sites simultaneously (~10 s on gpt2-small vs O(N)
+  passes for exact patching).  Top-K sites are flagged for follow-up circuit_patching.
+parameters:
+  model: gpt2-small
+  device: auto
+  seed: 42
+  top_k: 10
+  prompt_pairs:
+    - id: capital-france
+      clean_prompt: "The capital of France is Paris"
+      corrupted_prompt: "The capital of France is Rome"
+      correct_token: " Paris"
+      incorrect_token: " Rome"
+    - id: capital-italy
+      clean_prompt: "The capital of Italy is Rome"
+      corrupted_prompt: "The capital of Italy is Paris"
+      correct_token: " Rome"
+      incorrect_token: " Paris"
+    - id: tower-city
+      clean_prompt: "The Eiffel Tower is in Paris"
+      corrupted_prompt: "The Eiffel Tower is in Rome"
+      correct_token: " Paris"
+      incorrect_token: " Rome"
+  hook_sites:
+    - site: resid_pre
+      layers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    - site: mlp_out
+      layers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+  artifact_policy:
+    write_report: true

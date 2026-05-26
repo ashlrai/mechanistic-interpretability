@@ -132,6 +132,77 @@ class TransformerLensBackend:
                 )
         return results
 
+    def run_with_grad_cache(
+        self,
+        *,
+        prompt: str,
+        hook_sites: list[str],
+        correct_token: str,
+        incorrect_token: str,
+        target_position: int = -1,
+        clean_cache: dict[str, Any],
+    ) -> dict[str, float]:
+        """One forward + one backward pass; return per-site attribution scores.
+
+        attribution(h) ≈ Σ_d (clean[h,d] − corrupted[h,d]) · ∂L/∂corrupted[h,d]
+
+        where L = logit(correct) − logit(incorrect) at *target_position* of the
+        corrupted run.  The d_model dimension is reduced by the dot product,
+        leaving a single scalar per hook site (summed over batch and sequence).
+        """
+        if self.model is None:
+            self.load()
+        assert self.model is not None
+
+        correct_token_id = int(self.model.to_single_token(correct_token))
+        incorrect_token_id = int(self.model.to_single_token(incorrect_token))
+
+        # Store references so the hook closures can populate them.
+        corrupted_acts: dict[str, Any] = {}
+
+        def _save_and_retain(site: str) -> Any:
+            def hook(activation: Any, _hook: Any = None, **_kw: Any) -> Any:
+                # retain_grad keeps the gradient on this non-leaf tensor without
+                # breaking the computation graph — critical so gradients flow
+                # through ALL registered hook sites, not just the last one.
+                retain_grad = getattr(activation, "retain_grad", None)
+                if callable(retain_grad):
+                    retain_grad()
+                corrupted_acts[site] = activation
+                return activation
+            return hook
+
+        fwd_hooks = [(site, _save_and_retain(site)) for site in hook_sites]
+
+        # Forward pass through corrupted prompt; activations are retained in the
+        # graph via retain_grad() so we can read their .grad after backward().
+        logits = self.model.run_with_hooks(prompt, fwd_hooks=fwd_hooks)
+        seq_pos = target_position if target_position >= 0 else logits.shape[1] - 1
+        loss = logits[0, seq_pos, correct_token_id] - logits[0, seq_pos, incorrect_token_id]
+        loss.backward()
+
+        # Collect gradients and compute attribution dot products.
+        scores: dict[str, float] = {}
+        for site in hook_sites:
+            corrupted_tensor = corrupted_acts.get(site)
+            if corrupted_tensor is None:
+                scores[site] = 0.0
+                continue
+            grad = corrupted_tensor.grad
+            if grad is None:
+                scores[site] = 0.0
+                continue
+            clean_tensor = clean_cache.get(site)
+            if clean_tensor is None:
+                scores[site] = 0.0
+                continue
+            clean_t = clean_tensor.detach().to(corrupted_tensor.device)
+            diff = clean_t - corrupted_tensor.detach()
+            # Sum dot product over all dimensions (batch × seq × d_model → scalar).
+            scores[site] = float((diff * grad).sum().item())
+
+        return scores
+
     def run_cross_model_probe(
         self,
         request: CrossModelProbeRequest,
