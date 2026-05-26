@@ -1,0 +1,22 @@
+name: circuit-patching-smoke
+family: circuit_patching
+backend: transformerlens
+description: >-
+  Matrix sweep patching each of gpt2-small's first six residual-stream sites
+  individually. Identifies which layer's residual stream carries the most
+  causal information for the factual-recall prompt pair.
+parameters:
+  model: gpt2-small
+  source_prompt: "The Eiffel Tower is in Paris"
+  target_prompt: "The Eiffel Tower is in Rome"
+  answer_tokens:
+    correct: " Paris"
+    incorrect: " Rome"
+  patch_sites: ["resid_pre"]
+  target_position: -1
+  patch_position: -1
+  artifact_policy:
+    retain_activation_tensors: false
+    write_report: true
+matrix:
+  parameters.layers: [[0], [1], [2], [3], [4], [5]]
