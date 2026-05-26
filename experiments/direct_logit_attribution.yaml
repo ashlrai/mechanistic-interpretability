@@ -1,0 +1,32 @@
+name: direct-logit-attribution-factual
+family: direct_logit_attribution
+backend: transformerlens
+description: >
+  Decompose final-token logit contributions for factual recall prompts on
+  gpt2-small. Ranks every attention head and MLP layer by their direct logit
+  attribution score (unembed-projected component output) without any ablation.
+  Identifies which components most strongly push toward the correct answer token.
+
+parameters:
+  model: gpt2-small
+  device: cpu
+  seed: 42
+  target_position: -1
+  top_k: 10
+  prompt_pairs:
+    - id: capital-france
+      clean_prompt: "The capital of France is"
+      correct_token: " Paris"
+      incorrect_token: " London"
+    - id: author-hamlet
+      clean_prompt: "The play Hamlet was written by"
+      correct_token: " Shakespeare"
+      incorrect_token: " Marlowe"
+    - id: planet-largest
+      clean_prompt: "The largest planet in the Solar System is"
+      correct_token: " Jupiter"
+      incorrect_token: " Saturn"
+    - id: currency-japan
+      clean_prompt: "The official currency of Japan is the"
+      correct_token: " yen"
+      incorrect_token: " dollar"
