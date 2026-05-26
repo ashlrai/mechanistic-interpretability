@@ -500,9 +500,9 @@ def _media_type_from_path(path: Path) -> str:
 def _is_relative_to(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
+        return True
     except ValueError:
         return False
-    return True
 
 
 def _find_artifact_path(
@@ -583,16 +583,11 @@ def _parse_sae_features(
 
     total = len(normalised)
     dead_count = sum(1 for f in normalised if f["dead"])
-    live_count = total - dead_count
-    mean_per_token = (
-        float(raw.get("mean_features_per_token", 0.0)) if isinstance(raw, dict) else 0.0
-    )
-
     stats: dict[str, Any] = {
         "total": total,
-        "live": live_count,
+        "live": total - dead_count,
         "dead": dead_count,
-        "mean_per_token": mean_per_token,
+        "mean_per_token": float(raw.get("mean_features_per_token", 0.0)),
     }
     return normalised, stats
 
@@ -622,28 +617,23 @@ def _parse_acdc_circuit(
     # Nodes: accept {"nodes": {"name": {"importance": ..., "pruned": ...}, ...}}
     # or {"nodes": [{"name": ..., "importance": ..., "pruned": ...}, ...]}
     raw_nodes = raw.get("nodes", {})
-    nodes: list[dict[str, Any]] = []
+    node_items: list[tuple[str, dict[str, Any]]] = []
     if isinstance(raw_nodes, dict):
-        for name, info in raw_nodes.items():
-            if not isinstance(info, dict):
-                continue
-            nodes.append(
-                {
-                    "name": str(name),
-                    "importance": float(info.get("importance", 0.0)),
-                    "pruned": bool(info.get("pruned", False)),
-                }
-            )
+        node_items = [
+            (str(name), info) for name, info in raw_nodes.items() if isinstance(info, dict)
+        ]
     elif isinstance(raw_nodes, list):
-        for item in raw_nodes:
-            if isinstance(item, dict):
-                nodes.append(
-                    {
-                        "name": str(item.get("name", "")),
-                        "importance": float(item.get("importance", 0.0)),
-                        "pruned": bool(item.get("pruned", False)),
-                    }
-                )
+        node_items = [
+            (str(item.get("name", "")), item) for item in raw_nodes if isinstance(item, dict)
+        ]
+    nodes: list[dict[str, Any]] = [
+        {
+            "name": name,
+            "importance": float(info.get("importance", 0.0)),
+            "pruned": bool(info.get("pruned", False)),
+        }
+        for name, info in node_items
+    ]
     nodes.sort(key=lambda n: n["importance"], reverse=True)
     top_nodes = nodes[:20]
 

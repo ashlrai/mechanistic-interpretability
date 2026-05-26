@@ -64,7 +64,7 @@ import math
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -78,9 +78,6 @@ from mech_interp.types import (
     InstrumentedModelBackend,
     RunStatus,
 )
-
-if TYPE_CHECKING:
-    pass
 
 MAX_EDGES_DEFAULT = 500
 
@@ -244,7 +241,8 @@ class ACDCEdgeExperiment(Experiment):
 
         # Build all candidate edges (src.layer < dst.layer), capped at max_edges.
         all_edges = _build_edges(nodes)
-        if len(all_edges) > config.max_edges:
+        raw_edge_count = len(all_edges)
+        if raw_edge_count > config.max_edges:
             # Warn via notes later; truncate deterministically by edge_id sort.
             all_edges = sorted(all_edges, key=lambda e: e.edge_id)[: config.max_edges]
 
@@ -315,11 +313,8 @@ class ACDCEdgeExperiment(Experiment):
             pair = config.prompt_pairs[0]
             correct_id = int(model.to_single_token(pair.correct_token))
             incorrect_id = int(model.to_single_token(pair.incorrect_token))
-            seen_src: dict[str, EdgeNode] = {}
-            for e in pruned_edges:
-                if e.src_id not in seen_src:
-                    seen_src[e.src_id] = node_map[e.src_id]
-            pruned_src_nodes = list(seen_src.values())
+            unique_src_ids = list(dict.fromkeys(e.src_id for e in pruned_edges))
+            pruned_src_nodes = [node_map[src_id] for src_id in unique_src_ids]
             pruned_logits = _run_with_node_ablations(
                 model,
                 pair.clean_prompt,
@@ -359,7 +354,7 @@ class ACDCEdgeExperiment(Experiment):
         _write_circuit_dot(circuit_dot, artifact)
 
         survivors_count = sum(1 for e in candidate_edges if not e.pruned)
-        was_capped = len(all_edges) == config.max_edges and len(all_edges) < _count_raw_edges(nodes)
+        was_capped = raw_edge_count > config.max_edges
         notes = (
             f"ACDC-edge found {survivors_count} surviving edges "
             f"(of {len(candidate_edges)} candidates) with faithfulness "
@@ -443,16 +438,6 @@ def _build_edges(nodes: list[EdgeNode]) -> list[CircuitEdge]:
                     )
                 )
     return edges
-
-
-def _count_raw_edges(nodes: list[EdgeNode]) -> int:
-    """Count edges without materialising them (O(n^2) loop avoided)."""
-    total = 0
-    for i, src in enumerate(nodes):
-        for dst in nodes[i + 1 :]:
-            if src.layer < dst.layer:
-                total += 1
-    return total
 
 
 # ---------------------------------------------------------------------------

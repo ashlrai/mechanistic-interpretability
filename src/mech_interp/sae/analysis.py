@@ -143,8 +143,8 @@ def _token_overlap_coherence(prompts: list[str]) -> float:
     if len(prompts) < 2:
         return 1.0 if prompts else 0.0
     token_sets = [set(p.lower().split()) for p in prompts]
-    pair_scores: list[float] = []
-    for a, b in combinations(token_sets, 2):
-        union = len(a | b)
-        pair_scores.append(len(a & b) / union if union else 0.0)
-    return float(sum(pair_scores) / len(pair_scores)) if pair_scores else 0.0
+    pair_scores = [
+        len(a & b) / len(a | b) if (a | b) else 0.0
+        for a, b in combinations(token_sets, 2)
+    ]
+    return float(sum(pair_scores) / len(pair_scores))

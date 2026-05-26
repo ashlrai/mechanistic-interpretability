@@ -337,13 +337,10 @@ def _ablation_hook_for(
 
     # MLP: zero / mean-ablate the MLP output entirely
     def mlp_hook(activation: Tensor, hook: Any = None, **_kwargs: Any) -> Tensor:
-        patched = activation.clone()
         if ablation_type == "zero":
-            patched = torch.zeros_like(patched)
-        else:
-            mean = activation.mean(dim=(0, 1), keepdim=True)
-            patched = patched * 0 + mean
-        return patched
+            return torch.zeros_like(activation)
+        mean = activation.mean(dim=(0, 1), keepdim=True)
+        return activation * 0 + mean
 
     return f"blocks.{node.layer}.hook_mlp_out", mlp_hook
 
@@ -367,10 +364,11 @@ def _run_with_ablations(
 def _logit_diff(logits: Any, position: int, correct_id: int, incorrect_id: int) -> float:
     # Accept (batch, seq, vocab) or (seq, vocab); pull the target row.
     selected = logits
-    if hasattr(selected, "ndim") and selected.ndim == 3:
-        selected = selected[0, position, :]
-    elif hasattr(selected, "ndim") and selected.ndim == 2:
-        selected = selected[position, :]
+    if hasattr(selected, "ndim"):
+        if selected.ndim == 3:
+            selected = selected[0, position, :]
+        elif selected.ndim == 2:
+            selected = selected[position, :]
     detach = getattr(selected, "detach", None)
     if callable(detach):
         selected = detach()
@@ -412,6 +410,4 @@ def _write_circuit_dot(path: Path, circuit: CircuitArtifact) -> None:
         lines.append(f'  "{node.node_id}" [label="{label}", fillcolor="{color}"];')
     lines.append("}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
 

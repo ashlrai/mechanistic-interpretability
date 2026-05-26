@@ -216,14 +216,19 @@ def _proposal_from_site(
     }
 
 
-def _source_prompts(parameters: dict[str, Any]) -> dict[str, str]:
+def _first_prompt_pair(parameters: dict[str, Any]) -> dict[str, Any]:
     prompt_pairs = parameters.get("prompt_pairs")
     if isinstance(prompt_pairs, list) and prompt_pairs and isinstance(prompt_pairs[0], dict):
-        first_pair = prompt_pairs[0]
-        clean = first_pair.get("clean_prompt")
-        corrupted = first_pair.get("corrupted_prompt")
-        if isinstance(clean, str) and isinstance(corrupted, str):
-            return {"source_prompt": clean, "target_prompt": corrupted}
+        return prompt_pairs[0]
+    return {}
+
+
+def _source_prompts(parameters: dict[str, Any]) -> dict[str, str]:
+    first_pair = _first_prompt_pair(parameters)
+    clean = first_pair.get("clean_prompt")
+    corrupted = first_pair.get("corrupted_prompt")
+    if isinstance(clean, str) and isinstance(corrupted, str):
+        return {"source_prompt": clean, "target_prompt": corrupted}
     clean = parameters.get("source_prompt") or parameters.get("clean_prompt")
     corrupted = parameters.get("target_prompt") or parameters.get("corrupted_prompt")
     return {
@@ -233,13 +238,11 @@ def _source_prompts(parameters: dict[str, Any]) -> dict[str, str]:
 
 
 def _answer_tokens(parameters: dict[str, Any]) -> dict[str, str]:
-    prompt_pairs = parameters.get("prompt_pairs")
-    if isinstance(prompt_pairs, list) and prompt_pairs and isinstance(prompt_pairs[0], dict):
-        first_pair = prompt_pairs[0]
-        correct = first_pair.get("correct_token")
-        incorrect = first_pair.get("incorrect_token")
-        if isinstance(correct, str) and isinstance(incorrect, str):
-            return {"correct": correct, "incorrect": incorrect}
+    first_pair = _first_prompt_pair(parameters)
+    correct = first_pair.get("correct_token")
+    incorrect = first_pair.get("incorrect_token")
+    if isinstance(correct, str) and isinstance(incorrect, str):
+        return {"correct": correct, "incorrect": incorrect}
     answer_tokens = parameters.get("answer_tokens")
     if isinstance(answer_tokens, dict):
         correct = answer_tokens.get("correct")

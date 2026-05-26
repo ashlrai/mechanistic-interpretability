@@ -513,8 +513,10 @@ def _result_notes(
         (r["refusal_rate"] for r in intervention_results if r["coefficient"] == 0.0),
         None,
     )
+    if baseline is None:
+        return f"Refusal direction extracted. Extraction quality: {extraction_quality:.3f}."
     max_shift = max(
-        (abs(r["refusal_rate"] - (baseline or 0.0)) for r in intervention_results),
+        (abs(r["refusal_rate"] - baseline) for r in intervention_results),
         default=0.0,
     )
     return (
@@ -522,8 +524,6 @@ def _result_notes(
         f"Extraction quality (projection margin): {extraction_quality:.3f}. "
         f"Baseline refusal rate: {baseline:.2f}. "
         f"Max refusal-rate shift under steering: {max_shift:.2f}."
-        if baseline is not None
-        else f"Refusal direction extracted. Extraction quality: {extraction_quality:.3f}."
     )
 
 

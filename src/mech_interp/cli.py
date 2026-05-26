@@ -817,22 +817,15 @@ def _read_manifest(
     run_id: int,
     result_payload: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    manifest_path = None
+    candidate_paths: list[Path] = []
     if result_payload is not None:
         artifacts = result_payload.get("artifacts", {})
         if isinstance(artifacts, dict):
             manifest_value = artifacts.get("manifest")
             if isinstance(manifest_value, str):
-                manifest_path = Path(manifest_value)
+                candidate_paths.append(Path(manifest_value))
+    candidate_paths.append(artifact_dir / f"run-{run_id:06d}" / "manifest.json")
 
-    candidate_paths = [
-        path
-        for path in (
-            manifest_path,
-            artifact_dir / f"run-{run_id:06d}" / "manifest.json",
-        )
-        if path is not None
-    ]
     for path in candidate_paths:
         if path.exists():
             with path.open("r", encoding="utf-8") as manifest_file:

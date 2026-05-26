@@ -117,13 +117,11 @@ def iterate_from_run(
 
     # Recurse into successful child runs that have a proposal generator.
     if execute and _current_depth < max_depth:
-        for record in list(result.proposals):
-            if record.status != RunStatus.SUCCEEDED.value:
-                continue
-            if record.child_run_id is None:
+        for record in list(result.proposals):  # snapshot; recursion appends
+            if record.status != RunStatus.SUCCEEDED.value or record.child_run_id is None:
                 continue
             # Determine the child run's family to see if it supports proposal generation.
-            child_artifact_dir = _artifact_dir_for_run_id(artifact_dir, record.child_run_id)
+            child_artifact_dir = artifact_dir.parent / f"run-{record.child_run_id:06d}"
             child_family = _family_from_spec_json(child_artifact_dir)
             if child_family is None or child_family not in PROPOSAL_GENERATORS:
                 # Child family doesn't support proposal generation; skip silently.
@@ -156,19 +154,6 @@ def iterate_from_run(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _artifact_dir_for_run_id(sibling_dir: Path, run_id: int) -> Path:
-    """Infer the artifact directory for a child run.
-
-    The runner writes artifacts under ``<artifact_root>/run-<run_id:06d>/``.
-    We walk up from the source artifact dir to find the root.
-    """
-    # sibling_dir is e.g. .../artifacts/run-000001
-    # try parent then parent/run-XXXXXX
-    parent = sibling_dir.parent
-    candidate = parent / f"run-{run_id:06d}"
-    return candidate
 
 
 def _family_from_spec_json(artifact_dir: Path) -> str | None:
