@@ -84,6 +84,56 @@ def test_sae_trains_and_writes_artifacts(gpt2_backend: Any, tmp_path: Path) -> N
     assert len(parsed_history["losses_per_epoch"]) == 3
 
 
+def test_sae_trains_on_corpus_e2e(gpt2_backend: Any, tmp_path: Path) -> None:
+    """SAE trains on a real corpus file instead of a hand-crafted prompt list."""
+    corpus_path = Path("data/prompts/openwebtext_sample.jsonl")
+    assert corpus_path.exists(), f"sample corpus missing: {corpus_path}"
+
+    spec = ExperimentSpec(
+        name="e2e-sae-corpus",
+        family="polysemanticity_sae",
+        backend="transformerlens",
+        description="",
+        parameters={
+            "model": "gpt2-small",
+            "hook_site": "blocks.0.hook_resid_pre",
+            "n_features": 64,
+            "k": 8,
+            "epochs": 3,
+            "batch_size": 32,
+            "learning_rate": 1e-3,
+            "seed": 42,
+            "device": "cpu",
+            "corpus_path": str(corpus_path),
+            "seq_len": 32,
+            "max_tokens": 200,
+            "artifact_policy": {
+                "retain_weights": True,
+                "write_feature_analysis": True,
+                "top_prompts_per_feature": 3,
+            },
+        },
+    )
+    run_obj = _run(spec, tmp_path)
+    result = PolysemanticitySAEExperiment(backend=gpt2_backend).run(spec, run_obj)
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.metrics["n_tokens"] > 0
+    # Corpus path → doc labels in analysis prompts
+    analysis_path = Path(result.artifacts["feature_analysis"])
+    parsed = json.loads(analysis_path.read_text())
+    assert parsed["n_features"] == 64
+    # At least one feature should have a top_prompt starting with "doc_"
+    all_top_prompts = [
+        entry
+        for feat in parsed.get("features", [])
+        for entry in feat.get("top_prompts", [])
+    ]
+    assert any(p.get("prompt", "").startswith("doc_") for p in all_top_prompts), (
+        "Expected corpus doc labels in feature analysis top_prompts"
+    )
+
+
 def test_sae_run_is_deterministic_given_same_seed(gpt2_backend: Any, tmp_path: Path) -> None:
     prompts = ["The capital of France is Paris.", "The capital of Italy is Rome."]
     spec = _spec(prompts)

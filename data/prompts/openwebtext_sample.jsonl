@@ -1,0 +1,98 @@
+{"text": "The Amazon rainforest covers over 5.5 million square kilometres and is home to approximately 10% of all species on Earth."}
+{"text": "Paris is the capital of France and is known for the Eiffel Tower, the Louvre museum, and its rich culinary culture."}
+{"text": "The mitochondria are organelles found in eukaryotic cells and are responsible for producing ATP through cellular respiration."}
+{"text": "Python is a high-level programming language known for its clean syntax and extensive standard library."}
+{"text": "The Roman Empire at its peak stretched from Britain in the northwest to Mesopotamia in the east."}
+{"text": "Photosynthesis is the process by which plants convert sunlight, water, and carbon dioxide into glucose and oxygen."}
+{"text": "The Great Barrier Reef is the world's largest coral reef system, located off the coast of Queensland, Australia."}
+{"text": "Machine learning algorithms improve automatically through experience and by the use of data."}
+{"text": "The Sahara Desert is the largest hot desert in the world, covering most of North Africa."}
+{"text": "DNA is a double-helix molecule that carries the genetic instructions for the development of all living organisms."}
+{"text": "The French Revolution began in 1789 and fundamentally transformed French society and government."}
+{"text": "def fibonacci(n): return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)"}
+{"text": "Jupiter is the largest planet in our solar system, with a mass more than twice that of all other planets combined."}
+{"text": "The human immune system defends the body against pathogens using both innate and adaptive responses."}
+{"text": "import torch; tensor = torch.zeros(3, 4); print(tensor.shape)"}
+{"text": "The Silk Road was an ancient network of trade routes connecting China to the Mediterranean world."}
+{"text": "Neurons communicate through electrochemical signals called action potentials transmitted across synapses."}
+{"text": "The speed of light in a vacuum is approximately 299,792 kilometres per second."}
+{"text": "Shakespeare wrote 37 plays, 154 sonnets, and several longer poems during his lifetime."}
+{"text": "class BinaryTree: def __init__(self, val): self.val = val; self.left = None; self.right = None"}
+{"text": "The Pacific Ocean is the largest and deepest ocean, covering more than 30% of Earth's surface."}
+{"text": "Vaccines work by training the immune system to recognize and respond to specific pathogens."}
+{"text": "The Berlin Wall fell on November 9, 1989, marking the end of the Cold War division of Germany."}
+{"text": "Quantum mechanics describes physical phenomena at the scale of atoms and subatomic particles."}
+{"text": "The Amazon River discharges more water into the ocean than any other river in the world."}
+{"text": "Natural selection is the mechanism by which individuals with advantageous traits reproduce more successfully."}
+{"text": "for i, val in enumerate(my_list): print(f'index {i}: {val}')"}
+{"text": "The Byzantine Empire was the continuation of the Roman Empire in its eastern provinces."}
+{"text": "Black holes are regions of spacetime where gravity is so strong that nothing can escape, not even light."}
+{"text": "Antibiotics are compounds that inhibit bacterial growth or kill bacteria, but are ineffective against viruses."}
+{"text": "The Himalayas were formed by the collision of the Indian and Eurasian tectonic plates."}
+{"text": "Gradient descent is an optimization algorithm that iteratively adjusts parameters to minimize a loss function."}
+{"text": "The printing press, invented by Gutenberg around 1440, revolutionized the spread of knowledge in Europe."}
+{"text": "Chlorophyll is the green pigment in plants that absorbs light energy used in photosynthesis."}
+{"text": "x = [i**2 for i in range(10) if i % 2 == 0]  # list comprehension producing even squares"}
+{"text": "The Industrial Revolution began in Britain in the late 18th century and transformed manufacturing worldwide."}
+{"text": "The hippocampus is a region of the brain critical for forming new memories and spatial navigation."}
+{"text": "The Nile River is the longest river in Africa, flowing northward through Egypt to the Mediterranean Sea."}
+{"text": "Neural networks consist of layers of interconnected nodes that transform input data into predictions."}
+{"text": "Julius Caesar was assassinated on the Ides of March, 44 BC, by a group of Roman senators."}
+{"text": "The ozone layer in the stratosphere absorbs most of the Sun's ultraviolet radiation."}
+{"text": "try: result = int(user_input) except ValueError: print('Please enter a valid number')"}
+{"text": "The Congo Basin contains the second-largest tropical rainforest in the world after the Amazon."}
+{"text": "CRISPR-Cas9 is a molecular tool that allows scientists to edit DNA sequences with high precision."}
+{"text": "The Moon orbits Earth at an average distance of 384,400 kilometres and affects ocean tides."}
+{"text": "The Renaissance was a cultural movement that began in Italy in the 14th century and spread across Europe."}
+{"text": "Recursion is a programming technique where a function calls itself to solve smaller instances of a problem."}
+{"text": "The Mariana Trench is the deepest oceanic trench, reaching a depth of nearly 11 kilometres."}
+{"text": "Tectonic plates move at roughly the same speed as human fingernails grow, a few centimetres per year."}
+{"text": "with open('data.txt', 'r') as f: lines = [line.strip() for line in f if line.strip()]"}
+{"text": "The Mongol Empire was the largest contiguous land empire in history, spanning from Asia to Eastern Europe."}
+{"text": "Osmosis is the movement of water molecules through a semipermeable membrane from low to high solute concentration."}
+{"text": "The Andromeda Galaxy is the nearest spiral galaxy to the Milky Way, about 2.5 million light-years away."}
+{"text": "The Magna Carta, signed in 1215, established the principle that the king was subject to the rule of law."}
+{"text": "import numpy as np; arr = np.array([[1, 2], [3, 4]]); print(np.linalg.det(arr))"}
+{"text": "The liver performs over 500 vital functions including detoxification, protein synthesis, and bile production."}
+{"text": "Plate tectonics explains earthquakes, volcanic activity, and the formation of mountain ranges."}
+{"text": "The Ottoman Empire lasted from the 14th century until 1922 and encompassed parts of three continents."}
+{"text": "Enzymes are biological catalysts that speed up chemical reactions in cells without being consumed."}
+{"text": "The Dead Sea is the saltiest body of water in the world and the lowest point on Earth's surface."}
+{"text": "import json; data = json.loads(response.text); print(data['results'][0]['title'])"}
+{"text": "The cardiovascular system circulates blood, delivering oxygen and nutrients to tissues throughout the body."}
+{"text": "The Andes Mountains are the longest continental mountain range in the world, running along South America's west coast."}
+{"text": "Attention mechanisms in transformer models allow each token to weigh the importance of all other tokens."}
+{"text": "The Holocaust was the genocide of six million Jewish people by Nazi Germany during World War II."}
+{"text": "ATP synthase uses the proton gradient across the mitochondrial membrane to synthesize ATP."}
+{"text": "sorted_data = sorted(records, key=lambda x: x['score'], reverse=True)[:10]"}
+{"text": "The Caspian Sea is the world's largest landlocked body of water, bordered by five countries."}
+{"text": "RNA polymerase transcribes DNA into messenger RNA, which is then translated into protein by ribosomes."}
+{"text": "The Industrial Revolution led to urbanization, child labor, and eventually labor reform movements."}
+{"text": "Hash tables provide average O(1) time complexity for insertions, deletions, and lookups."}
+{"text": "The Gulf Stream is a warm ocean current that flows from the Gulf of Mexico to the North Atlantic."}
+{"text": "Plate boundaries where plates move apart are called divergent boundaries and often form mid-ocean ridges."}
+{"text": "class Node: def __init__(self, data): self.data = data; self.next = None"}
+{"text": "The Black Death killed an estimated one-third of Europe's population in the 14th century."}
+{"text": "Stem cells are undifferentiated cells capable of developing into many different cell types."}
+{"text": "The Sahel is a semi-arid region between the Sahara Desert and the Sudanian Savanna in Africa."}
+{"text": "In Python, generators use the yield keyword to produce a sequence of values lazily."}
+{"text": "The Apollo 11 mission landed the first humans on the Moon on July 20, 1969."}
+{"text": "Fermentation is the process by which microorganisms convert sugars into alcohol or acids."}
+{"text": "The Great Wall of China stretches over 21,000 kilometres and was built over many centuries."}
+{"text": "Convolutional neural networks are especially effective for image classification tasks."}
+{"text": "The Euphrates River was central to the development of ancient Mesopotamian civilization."}
+{"text": "Proteins are folded chains of amino acids that perform nearly every function in living cells."}
+{"text": "defaultdict(list) is a convenient way to group items without manually initializing empty lists."}
+{"text": "The Cold War was a period of geopolitical tension between the United States and the Soviet Union."}
+{"text": "Coral bleaching occurs when water temperatures rise and corals expel their symbiotic algae."}
+{"text": "The Inca Empire was the largest empire in pre-Columbian America, centered in modern-day Peru."}
+{"text": "Backpropagation computes gradients by applying the chain rule through each layer of a neural network."}
+{"text": "The stratosphere contains the ozone layer and is characterized by temperature increasing with altitude."}
+{"text": "Haemoglobin is the iron-containing protein in red blood cells that transports oxygen to tissues."}
+{"text": "np.einsum('bij,bjk->bik', A, B) computes batched matrix multiplication using Einstein summation."}
+{"text": "The Ming Dynasty ruled China from 1368 to 1644 and is known for constructing much of the Great Wall."}
+{"text": "HTTPS encrypts data between a browser and server using TLS, protecting against eavesdropping."}
+{"text": "The Amazon basin drains approximately 40% of South America's total land area."}
+{"text": "Type annotations in Python improve code readability and enable static analysis tools like mypy."}
+{"text": "The Spanish Armada was defeated by the English fleet and storms in 1588, ending Spain's naval dominance."}
+{"text": "The kidneys filter about 200 litres of blood daily and regulate fluid balance in the body."}

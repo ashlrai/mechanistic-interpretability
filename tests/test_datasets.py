@@ -93,11 +93,136 @@ parameters:
     assert spec.parameters["dataset_sha256"] == "expected-digest"
 
 
+_CORPUS_FILES = {"openwebtext_sample.jsonl"}
+
+
 def test_curated_prompt_files_load() -> None:
     for path in sorted(Path("data/prompts").glob("*.*")):
-        if path.name == "README.md":
+        if path.name == "README.md" or path.name in _CORPUS_FILES:
             continue
         dataset = load_prompt_dataset(path)
 
         assert dataset.records
         assert len(dataset.sha256) == 64
+
+
+# ---------------------------------------------------------------------------
+# Corpus loading tests (load_text_corpus / tokenize_corpus)
+# ---------------------------------------------------------------------------
+
+from mech_interp.datasets.corpus import load_text_corpus, tokenize_corpus  # noqa: E402
+
+
+def test_load_text_corpus_jsonl(tmp_path: Path) -> None:
+    corpus_file = tmp_path / "docs.jsonl"
+    corpus_file.write_text(
+        '{"text": "Hello world"}\n'
+        '{"text": "  "}\n'  # blank after strip — should be skipped
+        '{"text": "Second document"}\n',
+        encoding="utf-8",
+    )
+
+    docs = load_text_corpus(corpus_file)
+
+    assert docs == ["Hello world", "Second document"]
+
+
+def test_load_text_corpus_plain_text(tmp_path: Path) -> None:
+    corpus_file = tmp_path / "docs.txt"
+    corpus_file.write_text(
+        "# comment line\n"
+        "\n"
+        "First sentence here.\n"
+        "Second sentence here.\n",
+        encoding="utf-8",
+    )
+
+    docs = load_text_corpus(corpus_file)
+
+    assert docs == ["First sentence here.", "Second sentence here."]
+
+
+def test_load_text_corpus_max_documents(tmp_path: Path) -> None:
+    corpus_file = tmp_path / "many.jsonl"
+    lines = "\n".join(f'{{"text": "doc {i}"}}' for i in range(20))
+    corpus_file.write_text(lines + "\n", encoding="utf-8")
+
+    docs = load_text_corpus(corpus_file, max_documents=5)
+
+    assert len(docs) == 5
+    assert docs[0] == "doc 0"
+    assert docs[4] == "doc 4"
+
+
+def test_load_text_corpus_missing_file() -> None:
+    import pytest
+
+    with pytest.raises(FileNotFoundError):
+        load_text_corpus("/nonexistent/path/corpus.jsonl")
+
+
+def test_load_text_corpus_bad_text_field(tmp_path: Path) -> None:
+    import pytest
+
+    corpus_file = tmp_path / "bad.jsonl"
+    corpus_file.write_text('{"text": 42}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="'text' field must be a string"):
+        load_text_corpus(corpus_file)
+
+
+def test_tokenize_corpus_shape_and_padding() -> None:
+    """tokenize_corpus with a fake tokenizer produces (n_docs, seq_len) int tensor."""
+    import torch
+
+    class _FakeTokenizer:
+        pad_token_id = 0
+
+        def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+            # Return one token per word, capped at 200 tokens
+            return [hash(w) % 1000 + 1 for w in text.split()][:200]
+
+    class _FakeModel:
+        tokenizer = _FakeTokenizer()
+
+    docs = ["hello world", "one two three four five", "a"]
+    result = tokenize_corpus(_FakeModel(), docs, seq_len=4)
+
+    assert result.shape == (3, 4)
+    assert result.dtype == torch.long
+    # Short document "a" (1 token) should be right-padded with 0s
+    assert result[2, 1].item() == 0
+    assert result[2, 2].item() == 0
+
+
+def test_tokenize_corpus_max_tokens_caps_rows() -> None:
+    class _FakeTokenizer:
+        pad_token_id = 0
+
+        def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+            return [1] * 10  # always 10 tokens
+
+    class _FakeModel:
+        tokenizer = _FakeTokenizer()
+
+    docs = [f"doc {i}" for i in range(20)]
+    result = tokenize_corpus(_FakeModel(), docs, seq_len=4, max_tokens=16)
+
+    # 16 // 4 = 4 rows maximum
+    assert result.shape[0] == 4
+
+
+def test_tokenize_corpus_requires_nonempty_docs() -> None:
+    import pytest
+
+    class _FakeTokenizer:
+        pad_token_id = 0
+
+        def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+            return []
+
+    class _FakeModel:
+        tokenizer = _FakeTokenizer()
+
+    with pytest.raises(ValueError, match="empty token sequences"):
+        tokenize_corpus(_FakeModel(), ["   "], seq_len=4)

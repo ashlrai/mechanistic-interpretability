@@ -2,9 +2,9 @@ name: polysemanticity-sae-smoke
 family: polysemanticity_sae
 backend: transformerlens
 description: >-
-  Top-K SAE on gpt2-small layer-0 residual stream. Surfaces a small feature
-  dictionary across geography/animal/code prompt clusters and labels each
-  feature with its top-activating prompts.
+  Top-K SAE on gpt2-small layer-0 residual stream. Trains on a synthesised
+  100-document corpus covering geography, biology, code, and history so the
+  feature dictionary has real signal across diverse token distributions.
 parameters:
   model: gpt2-small
   hook_site: blocks.0.hook_resid_pre
@@ -15,22 +15,9 @@ parameters:
   learning_rate: 0.001
   seed: 42
   device: cpu
-  prompts:
-    - "The Eiffel Tower is in Paris."
-    - "The Colosseum is in Rome."
-    - "Big Ben is in London."
-    - "The Statue of Liberty is in New York."
-    - "The Great Wall is in China."
-    - "Cats are mammals that purr."
-    - "Dogs are loyal companions."
-    - "Birds can fly using wings."
-    - "Fish swim in the ocean."
-    - "Bees pollinate flowers."
-    - "def add(a, b): return a + b"
-    - "for i in range(10): print(i)"
-    - "import numpy as np"
-    - "class Foo: pass"
-    - "if __name__ == '__main__':"
+  corpus_path: data/prompts/openwebtext_sample.jsonl
+  seq_len: 64
+  max_tokens: 2000
   artifact_policy:
     retain_weights: true
     write_feature_analysis: true
