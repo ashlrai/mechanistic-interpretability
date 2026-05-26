@@ -1,8 +1,37 @@
-name: polysemanticity-smoke
-family: polysemanticity
+name: polysemanticity-sae-smoke
+family: polysemanticity_sae
 backend: transformerlens
-description: Initial placeholder spec for feature selectivity and polysemantic neuron probes.
+description: >-
+  Top-K SAE on gpt2-small layer-0 residual stream. Surfaces a small feature
+  dictionary across geography/animal/code prompt clusters and labels each
+  feature with its top-activating prompts.
 parameters:
-  activation_site: mlp_post
-  layers: [0]
-  top_k_features: 20
+  model: gpt2-small
+  hook_site: blocks.0.hook_resid_pre
+  n_features: 128
+  k: 8
+  epochs: 8
+  batch_size: 64
+  learning_rate: 0.001
+  seed: 42
+  device: cpu
+  prompts:
+    - "The Eiffel Tower is in Paris."
+    - "The Colosseum is in Rome."
+    - "Big Ben is in London."
+    - "The Statue of Liberty is in New York."
+    - "The Great Wall is in China."
+    - "Cats are mammals that purr."
+    - "Dogs are loyal companions."
+    - "Birds can fly using wings."
+    - "Fish swim in the ocean."
+    - "Bees pollinate flowers."
+    - "def add(a, b): return a + b"
+    - "for i in range(10): print(i)"
+    - "import numpy as np"
+    - "class Foo: pass"
+    - "if __name__ == '__main__':"
+  artifact_policy:
+    retain_weights: true
+    write_feature_analysis: true
+    top_prompts_per_feature: 5
