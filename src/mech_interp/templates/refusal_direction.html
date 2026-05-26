@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Refusal Sweep &mdash; Run {{ run.id }}</h1>
+<p class="muted">{{ run.spec_name }} / {{ run.family }} &nbsp;&bull;&nbsp; <a href="/runs/{{ run.id }}">back to run detail</a></p>
+
+<section>
+  <div class="status-grid">
+    <div class="status-card"><span class="muted">Model</span><strong style="font-size:1rem;word-break:break-all">{{ summary.model or "&mdash;"|safe }}</strong></div>
+    <div class="status-card"><span class="muted">Hook site</span><strong style="font-size:0.9rem;word-break:break-all">{{ summary.hook_site or "&mdash;"|safe }}</strong></div>
+    <div class="status-card"><span class="muted">Hidden dim</span><strong>{{ summary.hidden_dim }}</strong></div>
+    <div class="status-card"><span class="muted">Direction norm</span><strong>{{ "%.4f"|format(summary.direction_norm) }}</strong></div>
+    <div class="status-card"><span class="muted">Extraction quality</span><strong>{{ "%.4f"|format(summary.extraction_quality) }}</strong></div>
+  </div>
+</section>
+
+{% if charts_by_prompt %}
+<section>
+  <h2>Coefficient Sweep Charts</h2>
+  <p class="muted">Refusal rate vs. steering coefficient. One chart per test prompt.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:24px">
+    {% for prompt, points in charts_by_prompt.items() %}
+    {% set coeffs = points | map(attribute='coefficient') | list %}
+    {% set rates  = points | map(attribute='refusal_rate')  | list %}
+    {% set min_c  = coeffs | min %}
+    {% set max_c  = coeffs | max %}
+    {% set c_span = (max_c - min_c) if (max_c - min_c) > 0 else 1 %}
+    {# SVG canvas: 240 wide, 100 tall, 10px padding each side #}
+    {% set w = 240 %}
+    {% set h = 100 %}
+    {% set pad = 12 %}
+    {% set inner_w = w - 2 * pad %}
+    {% set inner_h = h - 2 * pad %}
+    <div style="background:white;border:1px solid #d8dee4;border-radius:8px;padding:12px;max-width:270px">
+      <p class="muted" style="font-size:0.78rem;margin:0 0 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:240px">{{ prompt }}</p>
+      <svg width="{{ w }}" height="{{ h }}" style="display:block">
+        {# axis lines #}
+        <line x1="{{ pad }}" y1="{{ pad }}" x2="{{ pad }}" y2="{{ pad + inner_h }}" stroke="#d8dee4"/>
+        <line x1="{{ pad }}" y1="{{ pad + inner_h }}" x2="{{ pad + inner_w }}" y2="{{ pad + inner_h }}" stroke="#d8dee4"/>
+        {# refusal_rate=1.0 guide line #}
+        <line x1="{{ pad }}" y1="{{ pad }}" x2="{{ pad + inner_w }}" y2="{{ pad }}" stroke="#eef1f4" stroke-dasharray="3,3"/>
+        {# y-axis tick: 0.5 #}
+        <line x1="{{ pad - 3 }}" y1="{{ pad + inner_h // 2 }}" x2="{{ pad }}" y2="{{ pad + inner_h // 2 }}" stroke="#66717a"/>
+        <text x="{{ pad - 4 }}" y="{{ pad + inner_h // 2 + 4 }}" text-anchor="end" font-size="9" fill="#66717a">0.5</text>
+        <text x="{{ pad - 4 }}" y="{{ pad + inner_h + 4 }}" text-anchor="end" font-size="9" fill="#66717a">0</text>
+        <text x="{{ pad - 4 }}" y="{{ pad + 4 }}" text-anchor="end" font-size="9" fill="#66717a">1</text>
+        {# polyline: map (coeff, rate) -> SVG coords #}
+        <polyline
+          fill="none"
+          stroke="#176b87"
+          stroke-width="2"
+          stroke-linejoin="round"
+          stroke-linecap="round"
+          points="{% for pt in points %}{{ pad + ((pt.coefficient - min_c) / c_span * inner_w) | round | int }},{{ pad + ((1.0 - pt.refusal_rate) * inner_h) | round | int }} {% endfor %}"
+        />
+        {# dots at each data point #}
+        {% for pt in points %}
+        <circle
+          cx="{{ pad + ((pt.coefficient - min_c) / c_span * inner_w) | round | int }}"
+          cy="{{ pad + ((1.0 - pt.refusal_rate) * inner_h) | round | int }}"
+          r="3"
+          fill="#176b87"
+        />
+        {% endfor %}
+        {# x-axis labels: first and last coefficient #}
+        <text x="{{ pad }}" y="{{ h - 1 }}" text-anchor="middle" font-size="9" fill="#66717a">{{ "%.1f"|format(min_c) }}</text>
+        <text x="{{ pad + inner_w }}" y="{{ h - 1 }}" text-anchor="middle" font-size="9" fill="#66717a">{{ "%.1f"|format(max_c) }}</text>
+      </svg>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if generations %}
+<section>
+  <h2>Generation Table</h2>
+  <div class="actions">
+    <label>Sort by coefficient:
+      <select id="sort-dir" onchange="sortTable()">
+        <option value="asc">Ascending</option>
+        <option value="desc">Descending</option>
+      </select>
+    </label>
+  </div>
+  <table id="gen-table">
+    <thead>
+      <tr>
+        <th>Test Prompt</th>
+        <th>Coeff</th>
+        <th>Generation</th>
+        <th>Refusal rate</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in generations %}
+      <tr data-coeff="{{ g.coefficient }}" style="cursor:pointer" onclick="toggleGen(this)">
+        <td class="muted" style="max-width:220px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">{{ g.prompt }}</td>
+        <td>{{ "%+.1f"|format(g.coefficient) }}</td>
+        <td style="max-width:340px">
+          <span class="snippet">{{ g.generation_snippet }}{% if g.generation_full | length > 200 %}&hellip;{% endif %}</span>
+          <span class="full" style="display:none;white-space:pre-wrap">{{ g.generation_full }}</span>
+        </td>
+        <td>{{ "%.2f"|format(g.refusal_rate) }}{% if g.is_refusal %} <span style="color:#b5400a">&bull;</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<p class="muted">No generation data found in intervention_results.json.</p>
+{% endif %}
+
+<section>
+  <h2>Contrast Set</h2>
+  <div class="status-grid" style="max-width:400px">
+    <div class="status-card"><span class="muted">Harmful prompts</span><strong>{{ summary.harmful_prompt_count }}</strong></div>
+    <div class="status-card"><span class="muted">Harmless prompts</span><strong>{{ summary.harmless_prompt_count }}</strong></div>
+  </div>
+</section>
+
+<script>
+function toggleGen(row) {
+  var snippet = row.querySelector('.snippet');
+  var full    = row.querySelector('.full');
+  if (!full) return;
+  var showing = full.style.display !== 'none';
+  full.style.display    = showing ? 'none' : '';
+  snippet.style.display = showing ? ''     : 'none';
+}
+
+function sortTable() {
+  var dir   = document.getElementById('sort-dir').value;
+  var tbody = document.querySelector('#gen-table tbody');
+  var rows  = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort(function(a, b) {
+    var va = parseFloat(a.dataset.coeff);
+    var vb = parseFloat(b.dataset.coeff);
+    return dir === 'asc' ? va - vb : vb - va;
+  });
+  rows.forEach(function(r) { tbody.appendChild(r); });
+}
+</script>
+{% endblock %}

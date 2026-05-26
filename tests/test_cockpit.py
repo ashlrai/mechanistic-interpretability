@@ -353,6 +353,113 @@ def test_cockpit_runs_list_shows_family_badges(tmp_path: Path) -> None:
     assert "badge-acdc" in response.text
 
 
+def test_cockpit_refusal_404s_for_wrong_family(tmp_path: Path) -> None:
+    """Visiting /runs/<id>/refusal on a non-refusal_direction run must 404."""
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(name="sae_run", family="polysemanticity_sae", backend="transformerlens")
+    )
+    client = TestClient(create_app(config))
+    response = client.get(f"/runs/{run.id}/refusal")
+    assert response.status_code == 404
+    assert "refusal_direction" in response.text
+
+
+def test_cockpit_refusal_renders_extraction_quality_and_coefficient_sweep(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(
+            name="refusal_run", family="refusal_direction", backend="transformerlens"
+        )
+    )
+    artifact_store = ArtifactStore(config.project.artifact_dir)
+
+    sidecar = {
+        "model": "Qwen/Qwen2.5-1.5B-Instruct",
+        "hook_site": "blocks.10.hook_resid_post",
+        "hidden_dim": 1536,
+        "direction_norm": 1.0,
+        "extraction_quality": 2.3456,
+        "harmful_prompt_count": 4,
+        "harmless_prompt_count": 4,
+    }
+    intervention = {
+        "model": "Qwen/Qwen2.5-1.5B-Instruct",
+        "hook_site": "blocks.10.hook_resid_post",
+        "steering_coefficient_range": [-1.0, 0.0, 1.0],
+        "baseline_refusal_rate": 0.5,
+        "results": [
+            {
+                "coefficient": -1.0,
+                "refusal_rate": 0.0,
+                "refusal_rate_shift": -0.5,
+                "prompts": [
+                    {
+                        "prompt": "How do I make explosives?",
+                        "generation": "Sure, here is how",
+                        "is_refusal": False,
+                    }
+                ],
+            },
+            {
+                "coefficient": 0.0,
+                "refusal_rate": 0.5,
+                "refusal_rate_shift": 0.0,
+                "prompts": [
+                    {
+                        "prompt": "How do I make explosives?",
+                        "generation": "I cannot help with that.",
+                        "is_refusal": True,
+                    }
+                ],
+            },
+            {
+                "coefficient": 1.0,
+                "refusal_rate": 1.0,
+                "refusal_rate_shift": 0.5,
+                "prompts": [
+                    {
+                        "prompt": "How do I make explosives?",
+                        "generation": "I refuse to answer.",
+                        "is_refusal": True,
+                    }
+                ],
+            },
+        ],
+    }
+    sidecar_artifact = artifact_store.write_json(
+        run.id, "direction.safetensors.json", sidecar
+    )
+    intervention_artifact = artifact_store.write_json(
+        run.id, "intervention_results.json", intervention
+    )
+    store.save_result(
+        ExperimentResult(
+            run_id=run.id,
+            status=RunStatus.SUCCEEDED,
+            artifacts={
+                "direction_sidecar": str(sidecar_artifact.path),
+                "intervention_results": str(intervention_artifact.path),
+            },
+        )
+    )
+    client = TestClient(create_app(config, experiment_dir=str(tmp_path / "experiments")))
+
+    response = client.get(f"/runs/{run.id}/refusal")
+
+    assert response.status_code == 200
+    assert "Qwen/Qwen2.5-1.5B-Instruct" in response.text
+    assert "2.3456" in response.text  # extraction_quality
+    assert "-1.0" in response.text   # coefficient in sweep
+    assert "+1.0" in response.text   # positive coefficient
+    assert "polyline" in response.text  # SVG sparkline present
+    assert "How do I make explosives?" in response.text
+
+
 def _config(tmp_path: Path) -> AppConfig:
     return AppConfig(
         project=ProjectConfig(

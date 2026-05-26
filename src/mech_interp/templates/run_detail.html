@@ -11,6 +11,9 @@
   {% if run.family == "acdc_lite" %}
   <a class="button" href="/runs/{{ run.id }}/circuit">Circuit View</a>
   {% endif %}
+  {% if run.family == "refusal_direction" %}
+  <a class="button" href="/runs/{{ run.id }}/refusal">View Refusal Sweep</a>
+  {% endif %}
 </div>
 {% else %}
 <h1>Run Missing</h1>

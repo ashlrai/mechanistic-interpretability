@@ -269,6 +269,48 @@ def create_app(config: AppConfig, experiment_dir: str = "experiments") -> FastAP
             },
         )
 
+    @app.get("/runs/{run_id}/refusal", response_class=HTMLResponse)
+    def refusal_direction(request: Request, run_id: int) -> HTMLResponse:
+        db = store()
+        run = next((item for item in db.list_runs(limit=500) if item.id == run_id), None)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if run.family != "refusal_direction":
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Run {run_id} is family '{run.family}', not 'refusal_direction'; "
+                    "refusal sweep view is only available for refusal_direction runs."
+                ),
+            )
+        result = db.get_result(run_id)
+        run_dir = config.project.artifact_dir / f"run-{run_id:06d}"
+        direction_sidecar_path = _find_artifact_path(
+            "direction_sidecar", result, run_dir / "direction.safetensors.json"
+        )
+        intervention_path = _find_artifact_path(
+            "intervention_results", result, run_dir / "intervention_results.json"
+        )
+        direction_json = _read_json_artifact(
+            str(direction_sidecar_path) if direction_sidecar_path else None
+        )
+        intervention_json = _read_json_artifact(
+            str(intervention_path) if intervention_path else None
+        )
+        summary, generations, charts_by_prompt = _parse_refusal_direction(
+            direction_json, intervention_json
+        )
+        return templates.TemplateResponse(
+            request,
+            "refusal_direction.html",
+            {
+                "run": run,
+                "summary": summary,
+                "generations": generations,
+                "charts_by_prompt": charts_by_prompt,
+            },
+        )
+
     @app.get("/reports", response_class=HTMLResponse)
     def reports_page(request: Request) -> HTMLResponse:
         reports_dir = config.project.artifact_dir / "reports"
@@ -557,6 +599,80 @@ def _read_environment(
     except (OSError, json.JSONDecodeError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _parse_refusal_direction(
+    direction_json: dict[str, Any] | None,
+    intervention_json: dict[str, Any] | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    """Parse direction sidecar + intervention results into display structures.
+
+    Returns:
+        summary: header-card fields (model, hook_site, hidden_dim, direction_norm,
+                 extraction_quality, harmful_prompt_count, harmless_prompt_count)
+        generations: flat list of per-(prompt, coefficient) rows for the table
+        charts_by_prompt: mapping prompt -> sorted list of {coefficient, refusal_rate}
+                          for SVG sparkline rendering in the template
+    """
+    summary: dict[str, Any] = {
+        "model": (direction_json or {}).get("model", ""),
+        "hook_site": (direction_json or {}).get("hook_site", ""),
+        "hidden_dim": (direction_json or {}).get("hidden_dim", 0),
+        "direction_norm": float((direction_json or {}).get("direction_norm", 0.0)),
+        "extraction_quality": float((direction_json or {}).get("extraction_quality", 0.0)),
+        "harmful_prompt_count": int((direction_json or {}).get("harmful_prompt_count", 0)),
+        "harmless_prompt_count": int((direction_json or {}).get("harmless_prompt_count", 0)),
+    }
+
+    results: list[dict[str, Any]] = []
+    if isinstance((intervention_json or {}).get("results"), list):
+        results = intervention_json["results"]  # type: ignore[index]
+
+    generations: list[dict[str, Any]] = []
+    charts_by_prompt: dict[str, list[dict[str, Any]]] = {}
+
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        coeff = float(row.get("coefficient", 0.0))
+        refusal_rate = float(row.get("refusal_rate", 0.0))
+        for prompt_row in row.get("prompts", []):
+            if not isinstance(prompt_row, dict):
+                continue
+            prompt = str(prompt_row.get("prompt", ""))
+            gen_text = str(prompt_row.get("generation", ""))
+            is_refusal = bool(prompt_row.get("is_refusal", False))
+            generations.append(
+                {
+                    "prompt": prompt,
+                    "coefficient": coeff,
+                    "generation": gen_text,
+                    "generation_snippet": gen_text[:200],
+                    "generation_full": gen_text,
+                    "is_refusal": is_refusal,
+                    "refusal_rate": refusal_rate,
+                }
+            )
+        # chart data: one point per coefficient for each prompt (use aggregate refusal_rate)
+        # We also collect per-coefficient points for the prompt-level chart.
+        for prompt_row in row.get("prompts", []):
+            if not isinstance(prompt_row, dict):
+                continue
+            prompt = str(prompt_row.get("prompt", ""))
+            if prompt not in charts_by_prompt:
+                charts_by_prompt[prompt] = []
+            charts_by_prompt[prompt].append(
+                {"coefficient": coeff, "refusal_rate": refusal_rate}
+            )
+
+    # Sort each chart series by coefficient ascending.
+    for prompt in charts_by_prompt:
+        charts_by_prompt[prompt].sort(key=lambda p: p["coefficient"])
+
+    # Sort generations by coefficient ascending.
+    generations.sort(key=lambda g: g["coefficient"])
+
+    return summary, generations, charts_by_prompt
 
 
 def _parse_sae_features(
