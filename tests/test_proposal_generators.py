@@ -6,9 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from mech_interp.experiments.registry import load_experiment_spec
 from mech_interp.orchestration.proposal_generators import (
     PROPOSAL_GENERATORS,
+    ACDCEdgeProposalGenerator,
     ACDCLiteProposalGenerator,
     PolysemanticitySAEProposalGenerator,
 )
@@ -178,4 +181,72 @@ def test_propose_from_run_raises_for_unsupported_family(tmp_path: Path) -> None:
 
 
 def test_registry_covers_expected_families() -> None:
-    assert set(PROPOSAL_GENERATORS) == {"polysemanticity_sae", "acdc_lite"}
+    assert set(PROPOSAL_GENERATORS) == {
+        "polysemanticity_sae",
+        "acdc_lite",
+        "acdc_edge",
+        "refusal_direction",
+    }
+
+
+def test_acdc_edge_generator_emits_acdc_lite_followup(tmp_path: Path) -> None:
+    spec_payload: dict[str, Any] = {
+        "name": "acdc-edge-run",
+        "family": "acdc_edge",
+        "backend": "transformerlens",
+        "parameters": {
+            "model": "gpt2-small",
+            "prompt_pairs": [
+                {
+                    "clean_prompt": "The capital of France is",
+                    "corrupted_prompt": "The capital of Italy is",
+                    "correct_token": " Paris",
+                    "incorrect_token": " Rome",
+                }
+            ],
+        },
+    }
+    edges_payload: dict[str, Any] = {
+        "model": "gpt2-small",
+        "faithfulness": 0.88,
+        "edges": [
+            {
+                "edge_id": "L0.H3->L2.H5",
+                "src_id": "L0.H3",
+                "dst_id": "L2.H5",
+                "src_layer": 0,
+                "dst_layer": 2,
+                "importance": 0.8,
+                "pruned": False,
+            },
+            {
+                "edge_id": "L1.MLP->L3.H0",
+                "src_id": "L1.MLP",
+                "dst_id": "L3.H0",
+                "src_layer": 1,
+                "dst_layer": 3,
+                "importance": 0.5,
+                "pruned": False,
+            },
+            {
+                "edge_id": "L0.H0->L1.H0",
+                "src_id": "L0.H0",
+                "dst_id": "L1.H0",
+                "src_layer": 0,
+                "dst_layer": 1,
+                "importance": 0.01,
+                "pruned": True,
+            },
+        ],
+    }
+    (tmp_path / "spec.json").write_text(json.dumps(spec_payload), encoding="utf-8")
+    (tmp_path / "edges.json").write_text(json.dumps(edges_payload), encoding="utf-8")
+
+    proposals = ACDCEdgeProposalGenerator().generate(tmp_path, limit=5)
+    assert len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal["family"] == "acdc_lite"
+    # Destination layers of surviving edges: 2, 3 (in rank order).
+    assert proposal["parameters"]["layers"] == [2, 3]
+    assert proposal["parameters"]["model"] == "gpt2-small"
+    assert proposal["parameters"]["source_acdc_edge_faithfulness"] == pytest.approx(0.88)

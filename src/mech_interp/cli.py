@@ -4,6 +4,7 @@ import csv
 import json
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -12,7 +13,12 @@ from rich.console import Console
 from rich.table import Table
 
 from mech_interp.analysis import summarize_recent_runs
-from mech_interp.analysis.run_reports import write_aggregate_reports
+from mech_interp.analysis.run_reports import (
+    _load_run_artifacts_from_dir,
+    environment_provenance,
+    inspect_run_family,
+    write_aggregate_reports,
+)
 from mech_interp.config import load_config
 from mech_interp.experiments import load_experiment_specs
 from mech_interp.experiments.registry import ExperimentSpecValidationError
@@ -21,6 +27,10 @@ from mech_interp.orchestration import (
     ExperimentRunner,
     ExperimentRunQueue,
     ResourcePolicy,
+)
+from mech_interp.orchestration.iterate_loop import (
+    _gather_proposal_paths,
+    iterate_from_run,
 )
 from mech_interp.orchestration.iteration import IterationCaps, propose_and_enqueue_iteration
 from mech_interp.orchestration.preflight import (
@@ -555,6 +565,78 @@ def propose_from_run_command(
     )
 
 
+@app.command("iterate-from-run")
+def iterate_from_run_command(
+    family: str = typer.Option(
+        ...,
+        help="Family of the source run (polysemanticity_sae, acdc_lite).",
+    ),
+    artifact_dir: Annotated[
+        Path,
+        typer.Option("--artifact-dir", "-a", help="Run artifact directory to read."),
+    ] = Path("."),
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Root directory for generated specs and manifests."),
+    ] = DEFAULT_PROPOSAL_OUTPUT,
+    limit: int = typer.Option(5, min=1, help="Max follow-up specs per depth level."),
+    max_depth: int = typer.Option(1, min=1, help="Maximum recursion depth."),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Generate proposals without executing them (equivalent to propose-from-run).",
+    ),
+) -> None:
+    """Closed-loop iterate: generate proposals, execute them, and optionally recurse.
+
+    With --dry-run, behaves identically to mech propose-from-run (writes specs, no execution).
+    Without --dry-run, each generated spec is loaded and run through ExperimentRunner,
+    then successful child runs are recursed into up to --max-depth levels.
+    """
+    config = load_config()
+    result_store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    runner: ExperimentRunner | None = None
+    if not dry_run:
+        runner = ExperimentRunner(
+            result_store=result_store,
+            artifact_store=ArtifactStore(config.project.artifact_dir),
+        )
+
+    try:
+        loop_result = iterate_from_run(
+            family,
+            artifact_dir,
+            output,
+            limit=limit,
+            max_depth=max_depth,
+            execute=not dry_run,
+            runner=runner,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    proposals = _gather_proposal_paths(loop_result)
+    table = Table(title=f"iterate-from-run  family={family}  depth={max_depth}")
+    table.add_column("Name")
+    table.add_column("Status")
+    table.add_column("Run ID")
+    table.add_column("Notes")
+    for rec in proposals:
+        table.add_row(
+            rec["name"],
+            rec["status"],
+            str(rec["child_run_id"]) if rec["child_run_id"] is not None else "-",
+            rec["notes"] or "-",
+        )
+    console.print(table)
+    mode = "dry-run" if dry_run else f"executed {loop_result.total_runs} run(s)"
+    console.print(
+        f"Generated {len(proposals)} proposal(s); {mode}; "
+        f"max depth reached: {loop_result.max_depth_reached}."
+    )
+
+
 @app.command("iterate")
 def iterate(
     family: str = typer.Option("circuit_patching", help="Experiment family to propose for."),
@@ -605,8 +687,45 @@ def cockpit(
 
 
 @app.command("inspect-run")
-def inspect_run(run_id: Annotated[int, typer.Argument(min=1)]) -> None:
-    """Print stored spec, config, result, and manifest data for a run."""
+def inspect_run(
+    run_id: Annotated[int, typer.Argument(min=1)],
+    top_n: int = typer.Option(5, min=1, help="Top N items in family-specific summary."),
+) -> None:
+    """Print stored spec, config, result, and manifest data for a run.
+
+    Includes a family-specific summary block (top features for SAE; top edges +
+    faithfulness for ACDC; top recovery sites for circuit_patching) and a one-line
+    environment provenance header (torch version, seed, uv.lock sha).
+    """
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    spec = store.get_run_spec(run_id)
+    if spec is None:
+        console.print(f"[red]Run {run_id} was not found.[/red]")
+        raise typer.Exit(code=1)
+
+    artifact_dir = config.project.artifact_dir / f"run-{run_id:06d}"
+
+    # Environment provenance header
+    env = environment_provenance(artifact_dir)
+    if env is not None:
+        env_line = (
+            f"[bold]env:[/bold] torch={env.get('torch_version') or '?'}  "
+            f"seed={env.get('seed')}  "
+            f"uv.lock={env.get('uv_lock_sha') or 'n/a'}  "
+            f"python={env.get('python_version') or '?'}"
+        )
+        console.print(env_line)
+
+    # Family-specific summary
+    family = spec.get("family", "") if isinstance(spec, dict) else ""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        family_summary = inspect_run_family(family, artifact_dir, top_n=top_n)
+    for w in caught:
+        console.print(f"[yellow]warning:[/yellow] {w.message}")
+    console.print_json(json.dumps(family_summary, indent=2, default=str))
+
     bundle = _run_bundle(run_id)
     console.print_json(json.dumps(bundle, indent=2, sort_keys=True))
 
@@ -616,8 +735,16 @@ def export_run(
     run_id: Annotated[int, typer.Argument(min=1)],
     output: Annotated[Path, typer.Option("--output", "-o", help="JSON file to write.")],
 ) -> None:
-    """Export stored run data as a JSON bundle."""
+    """Export stored run data as a JSON bundle.
+
+    Includes all known artifact files found in the run directory (artifact-agnostic
+    walk), so SAE feature_analysis.json, circuit.json, edges.json, environment.json,
+    and direction.safetensors.json are all captured automatically.
+    """
+    config = load_config()
     bundle = _run_bundle(run_id)
+    artifact_dir = config.project.artifact_dir / f"run-{run_id:06d}"
+    bundle["all_artifacts"] = _load_run_artifacts_from_dir(artifact_dir)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps(bundle, default=str, indent=2, sort_keys=True) + "\n",

@@ -120,6 +120,12 @@ def experiment_for_spec(spec: ExperimentSpec) -> Experiment:
     if spec.family == "acdc_lite":
         from mech_interp.experiments.acdc_lite import ACDCLiteExperiment
         return ACDCLiteExperiment()
+    if spec.family == "acdc_edge":
+        from mech_interp.experiments.acdc_edge import ACDCEdgeExperiment
+        return ACDCEdgeExperiment()
+    if spec.family == "refusal_direction":
+        from mech_interp.experiments.refusal_direction import RefusalDirectionExperiment
+        return RefusalDirectionExperiment()
     if spec.parameters.get("runner") == "activation_capture":
         return ActivationCaptureExperiment()
     if spec.parameters.get("runner") == "transformerlens_smoke":
