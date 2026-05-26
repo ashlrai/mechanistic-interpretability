@@ -96,6 +96,76 @@ def test_transformerlens_backend_captures_selected_activations(
     }
 
 
+def test_patch_hook_absorbs_transformerlens_hook_kwargs() -> None:
+    """Regression for Run 15 failure: ``patch_hook`` must accept the ``hook=`` kwarg
+    that TransformerLens injects when invoking forward hooks, plus any future kwargs.
+    The defensive ``**_kwargs: Any`` in the closure is what protects us.
+    """
+
+    class FakeActivation:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def clone(self) -> "FakeActivation":
+            return FakeActivation(self.value)
+
+        def __getitem__(self, key: object) -> "FakeActivation":
+            return self
+
+        def __setitem__(self, key: object, value: object) -> None:
+            if isinstance(value, FakeActivation):
+                self.value = value.value
+
+    captured: dict[str, float] = {}
+
+    class FakeHookedTransformer:
+        def to_single_token(self, token: str) -> int:
+            return 1
+
+        def run_with_cache(
+            self,
+            prompt: str,
+            names_filter: Any,
+        ) -> tuple[np.ndarray[Any, Any], dict[str, FakeActivation]]:
+            return np.array([[[0.0, 1.0]]]), {"site": FakeActivation(7.0)}
+
+        def __call__(self, prompt: str) -> np.ndarray[Any, Any]:
+            return np.array([[[0.0, 1.0]]])
+
+        def run_with_hooks(
+            self,
+            prompt: str,
+            fwd_hooks: list[tuple[str, Any]],
+        ) -> np.ndarray[Any, Any]:
+            _, hook_fn = fwd_hooks[0]
+            patched = hook_fn(
+                FakeActivation(0.0),
+                hook=SimpleNamespace(name="site"),
+                some_future_tl_kwarg="should-be-absorbed",
+            )
+            captured["patched"] = patched.value
+            return np.array([[[0.0, 1.0]]])
+
+    backend = TransformerLensBackend(model_name="tiny")
+    backend.model = FakeHookedTransformer()
+    backend.run_activation_patching(
+        ActivationPatchRequest(
+            model_name="tiny",
+            prompt_pairs=(
+                ActivationPatchPromptPair(
+                    id="pair",
+                    clean_prompt="clean",
+                    corrupted_prompt="corrupted",
+                    correct_token=" yes",
+                    incorrect_token=" yes",
+                ),
+            ),
+            hook_sites=("site",),
+        )
+    )
+    assert captured["patched"] == 7.0
+
+
 def test_transformerlens_backend_runs_activation_patching_with_fake_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

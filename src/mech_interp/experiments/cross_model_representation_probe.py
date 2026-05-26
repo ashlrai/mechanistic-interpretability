@@ -58,9 +58,9 @@ class ArtifactPolicy(BaseModel):
 class CrossModelProbeSpec(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    source_model: str = "tiny-stories-1M"
+    source_model: str = "roneneldan/TinyStories-1M"
     source_model_name: str | None = None
-    target_model: str = "tiny-stories-2M"
+    target_model: str = "roneneldan/TinyStories-3M"
     target_model_name: str | None = None
     source_hook_site: str
     target_hook_site: str

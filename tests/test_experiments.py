@@ -10,8 +10,11 @@ def test_load_experiment_specs() -> None:
     registry = load_experiment_specs("experiments")
     names = {spec.name for spec in registry.list()}
 
-    assert "polysemanticity-smoke" in names
-    assert "superposition-smoke" in names
+    assert "polysemanticity-sae-smoke" in names
+    assert "acdc-lite-gpt2-factual" in names
+    # superposition.yaml was removed when we added the placeholder gate; the family
+    # has no real implementation yet, so we don't ship a default spec for it.
+    assert "superposition-smoke" not in names
     assert "circuit-patching-smoke" in names
 
 

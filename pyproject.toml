@@ -60,6 +60,9 @@ packages = ["src/mech_interp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: end-to-end tests that load real models (slow; require --extra interp)",
+]
 
 [tool.ruff]
 line-length = 100

@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
+import importlib.metadata
+import os
+import random
+import sys
 from dataclasses import asdict
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from mech_interp.experiments.activation_capture import ActivationCaptureExperiment
 from mech_interp.experiments.base import Experiment
@@ -15,6 +22,19 @@ from mech_interp.experiments.transformerlens_smoke import TransformerLensSmokeEx
 from mech_interp.storage import ArtifactStore, SQLiteResultStore
 from mech_interp.types import ArtifactRecord, ExperimentResult, ExperimentSpec, RunStatus
 
+DEFAULT_SEED = 42
+PLACEHOLDER_ENV_VAR = "MECH_INTERP_ALLOW_PLACEHOLDER"
+
+
+class FamilyNotImplementedError(RuntimeError):
+    """Raised when a YAML spec targets a family that has no real implementation.
+
+    The fallback ``SpecValidationExperiment`` only emits placeholder metrics, so silently
+    using it for unmapped families historically produced fake "successful" runs
+    (see the polysemanticity / superposition runs prior to this gate). Opt back in
+    by setting ``MECH_INTERP_ALLOW_PLACEHOLDER=1`` in the environment.
+    """
+
 
 class ExperimentRunner:
     def __init__(self, result_store: SQLiteResultStore, artifact_store: ArtifactStore) -> None:
@@ -24,6 +44,9 @@ class ExperimentRunner:
     def run(self, spec: ExperimentSpec) -> ExperimentResult:
         run = self.result_store.create_run(spec)
         self.result_store.update_run_status(run.id, RunStatus.RUNNING)
+        seed = _resolve_seed(spec)
+        _initialize_seed(seed)
+        env_fingerprint = _capture_environment_fingerprint(spec, seed)
         records = [
             self.artifact_store.write_json(
                 run.id,
@@ -35,7 +58,8 @@ class ExperimentRunner:
                     "description": spec.description,
                     "parameters": spec.parameters,
                 },
-            )
+            ),
+            self.artifact_store.write_json(run.id, "environment.json", env_fingerprint),
         ]
 
         try:
@@ -88,11 +112,111 @@ def experiment_for_spec(spec: ExperimentSpec) -> Experiment:
         return CircuitPatchingExperiment()
     if spec.family == "cross_model_representation_probe":
         return CrossModelRepresentationProbeExperiment()
+    if spec.family == "polysemanticity_sae":
+        from mech_interp.experiments.polysemanticity_sae import (
+            PolysemanticitySAEExperiment,
+        )
+        return PolysemanticitySAEExperiment()
+    if spec.family == "acdc_lite":
+        from mech_interp.experiments.acdc_lite import ACDCLiteExperiment
+        return ACDCLiteExperiment()
     if spec.parameters.get("runner") == "activation_capture":
         return ActivationCaptureExperiment()
     if spec.parameters.get("runner") == "transformerlens_smoke":
         return TransformerLensSmokeExperiment()
-    return SpecValidationExperiment(spec.family)
+    if os.environ.get(PLACEHOLDER_ENV_VAR) == "1":
+        return SpecValidationExperiment(spec.family)
+    raise FamilyNotImplementedError(
+        f"Experiment family '{spec.family}' has no real implementation. "
+        f"Set {PLACEHOLDER_ENV_VAR}=1 to opt into the placeholder runner."
+    )
+
+
+def _resolve_seed(spec: ExperimentSpec) -> int:
+    raw = spec.parameters.get("seed", DEFAULT_SEED)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_SEED
+
+
+def _initialize_seed(seed: int) -> None:
+    """Set seeds for python, numpy, torch (incl. MPS) so each run is reproducible.
+
+    torch and numpy are imported lazily so the runner works for placeholder/lightweight
+    families even when the optional ``interp`` extras are not installed.
+    """
+    random.seed(seed)
+    try:
+        import numpy as np
+
+        np.random.seed(seed)
+    except ImportError:
+        pass
+    try:
+        import torch
+
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        mps = getattr(torch, "mps", None)
+        if mps is not None and getattr(mps, "manual_seed", None):
+            mps.manual_seed(seed)
+    except ImportError:
+        pass
+
+
+@lru_cache(maxsize=1)
+def _uv_lock_sha256() -> str | None:
+    candidate = Path(__file__).resolve()
+    for directory in (candidate, *candidate.parents):
+        lockfile = directory / "uv.lock"
+        if lockfile.is_file():
+            return hashlib.sha256(lockfile.read_bytes()).hexdigest()
+    return None
+
+
+def _package_version(name: str) -> str | None:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _capture_environment_fingerprint(spec: ExperimentSpec, seed: int) -> dict[str, Any]:
+    """Snapshot the environment that produced this run.
+
+    Captures library versions, the ``uv.lock`` hash, and a sample of model weights
+    so silent drift between runs is detectable months later.
+    """
+    fingerprint: dict[str, Any] = {
+        "seed": seed,
+        "python_version": ".".join(map(str, sys.version_info[:3])),
+        "uv_lock_sha256": _uv_lock_sha256(),
+        "spec_name": spec.name,
+        "family": spec.family,
+        "backend": spec.backend,
+        "model_name": spec.parameters.get("model") or spec.parameters.get("model_name"),
+        "package_versions": {
+            "numpy": _package_version("numpy"),
+            "torch": _package_version("torch"),
+            "transformer-lens": _package_version("transformer-lens"),
+            "transformers": _package_version("transformers"),
+            "safetensors": _package_version("safetensors"),
+            "pydantic": _package_version("pydantic"),
+        },
+    }
+    try:
+        import torch
+
+        fingerprint["torch_runtime"] = {
+            "version": torch.__version__,
+            "mps_available": bool(torch.backends.mps.is_available()),
+            "cuda_available": bool(torch.cuda.is_available()),
+        }
+    except (ImportError, AttributeError):
+        pass
+    return fingerprint
 
 
 def _artifact_records_from_result(result: ExperimentResult) -> list[ArtifactRecord]:
