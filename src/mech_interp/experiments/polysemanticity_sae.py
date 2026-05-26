@@ -238,8 +238,6 @@ def _activations_from_corpus(
     document text appended) so the feature analysis JSON stays readable without
     storing full document text for every token position.
     """
-    import torch
-
     from mech_interp.datasets.corpus import load_text_corpus, tokenize_corpus
 
     corpus_path = Path(config.corpus_path)  # type: ignore[arg-type]

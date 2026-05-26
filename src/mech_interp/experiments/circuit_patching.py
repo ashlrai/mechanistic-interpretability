@@ -13,6 +13,7 @@ from mech_interp.backends import create_instrumented_backend
 from mech_interp.datasets import PromptDataset, load_prompt_dataset
 from mech_interp.experiments.base import Experiment
 from mech_interp.orchestration.resource_policy import ActivationEstimate, ResourcePolicy
+from mech_interp.storage.artifacts import resolve_run_artifact_dir
 from mech_interp.types import (
     ActivationPatchPromptPair,
     ActivationPatchRequest,
@@ -151,7 +152,7 @@ class CircuitPatchingExperiment(Experiment):
         missing_experimental_sites = _missing_sites(prompt_pairs, hook_sites, raw_results)
         missing_control_sites = _missing_sites(prompt_pairs, control_hook_sites, raw_results)
 
-        artifact_dir = _run_artifact_dir(run)
+        artifact_dir = resolve_run_artifact_dir(run)
         artifact_dir.mkdir(parents=True, exist_ok=True)
         ranked_json = artifact_dir / "patching_ranked_results.json"
         ranked_csv = artifact_dir / "patching_ranked_results.csv"
@@ -605,8 +606,4 @@ def _result_notes(
     )
 
 
-def _run_artifact_dir(run: ExperimentRun) -> Path:
-    expected_name = f"run-{run.id:06d}"
-    if run.artifact_dir.name == expected_name:
-        return run.artifact_dir
-    return run.artifact_dir / expected_name
+

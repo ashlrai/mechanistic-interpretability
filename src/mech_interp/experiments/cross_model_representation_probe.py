@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mech_interp.backends import create_instrumented_backend
 from mech_interp.experiments.base import Experiment
+from mech_interp.storage.artifacts import resolve_run_artifact_dir
 from mech_interp.types import (
     CrossModelProbeRecord,
     CrossModelProbeRequest,
@@ -117,7 +118,7 @@ class CrossModelRepresentationProbeExperiment(Experiment):
         if not probe_results:
             raise ValueError("Cross-model representation probe produced no results.")
 
-        artifact_dir = _run_artifact_dir(run)
+        artifact_dir = resolve_run_artifact_dir(run)
         artifact_dir.mkdir(parents=True, exist_ok=True)
         rows = [_result_row(result) for result in probe_results]
         sorted_rows = sorted(
@@ -401,8 +402,4 @@ def _result_notes(rows: list[dict[str, Any]]) -> str:
     )
 
 
-def _run_artifact_dir(run: ExperimentRun) -> Path:
-    expected_name = f"run-{run.id:06d}"
-    if run.artifact_dir.name == expected_name:
-        return run.artifact_dir
-    return run.artifact_dir / expected_name
+

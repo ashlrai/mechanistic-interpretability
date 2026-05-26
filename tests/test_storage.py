@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from mech_interp.storage import SQLiteResultStore
-from mech_interp.types import ExperimentResult, ExperimentSpec, RunStatus
+from mech_interp.storage import SQLiteResultStore, resolve_run_artifact_dir
+from mech_interp.types import ExperimentResult, ExperimentRun, ExperimentSpec, RunStatus
 
 
 def test_sqlite_store_creates_run_and_result(tmp_path: Path) -> None:
@@ -198,3 +198,118 @@ def test_sqlite_store_migrates_partial_v2_queue_tables(tmp_path: Path) -> None:
         event_columns
     )
     assert user_version == 2
+
+
+def test_resolve_run_artifact_dir_returns_artifact_dir_as_is(tmp_path: Path) -> None:
+    """resolve_run_artifact_dir must never nest a run-NNNNNN subdir."""
+    run = ExperimentRun(
+        id=1,
+        spec_name="test",
+        family="polysemanticity",
+        backend="transformerlens",
+        status=RunStatus.PLANNED,
+        artifact_dir=tmp_path,
+        created_at=datetime(2024, 1, 1, tzinfo=UTC),
+    )
+    result = resolve_run_artifact_dir(run)
+    # Always trusts the caller — no sub-dir appended.
+    assert result == tmp_path
+
+
+def test_resolve_run_artifact_dir_flat_path_does_not_nest(tmp_path: Path) -> None:
+    """Passing a flat tmp dir must not produce parent/run-000001/run-000001."""
+    run = ExperimentRun(
+        id=1,
+        spec_name="test",
+        family="circuit_patching",
+        backend="transformerlens",
+        status=RunStatus.PLANNED,
+        artifact_dir=tmp_path,
+        created_at=datetime(2024, 1, 1, tzinfo=UTC),
+    )
+    result = resolve_run_artifact_dir(run)
+    # Must not equal tmp_path / "run-000001"
+    assert result == tmp_path
+    assert result != tmp_path / "run-000001"
+
+
+def test_resolve_run_artifact_dir_named_dir(tmp_path: Path) -> None:
+    """Passing the already-correct run-NNNNNN dir returns it unchanged."""
+    named = tmp_path / "run-000026"
+    run = ExperimentRun(
+        id=26,
+        spec_name="test",
+        family="acdc_lite",
+        backend="transformerlens",
+        status=RunStatus.SUCCEEDED,
+        artifact_dir=named,
+        created_at=datetime(2024, 1, 1, tzinfo=UTC),
+    )
+    result = resolve_run_artifact_dir(run)
+    assert result == named
+
+
+def test_sqlite_store_archive_runs(tmp_path: Path) -> None:
+    store = SQLiteResultStore(tmp_path / "runs.sqlite3", tmp_path / "artifacts")
+    spec = ExperimentSpec(name="test", family="polysemanticity", backend="transformerlens")
+    run = store.create_run(spec)
+
+    # Create the artifact directory so rename can be tested.
+    run_dir = tmp_path / "artifacts" / f"run-{run.id:06d}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "result.json").write_text("{}", encoding="utf-8")
+
+    archived = store.archive_runs([run.id], tmp_path / "artifacts")
+    assert archived == [run.id]
+
+    # Artifact dir moved.
+    dest = tmp_path / "artifacts" / "archived" / f"run-{run.id:06d}"
+    assert dest.is_dir()
+    assert not run_dir.exists()
+
+    # Archived run is excluded from default list_runs.
+    active_runs = store.list_runs(limit=100)
+    assert not any(r.id == run.id for r in active_runs)
+
+    # But visible with include_archived=True.
+    all_runs = store.list_runs(limit=100, include_archived=True)
+    assert any(r.id == run.id for r in all_runs)
+
+
+def test_sqlite_store_archive_runs_missing_dir(tmp_path: Path) -> None:
+    """archive_runs stamps the DB even if the artifact directory is absent."""
+    store = SQLiteResultStore(tmp_path / "runs.sqlite3", tmp_path / "artifacts")
+    spec = ExperimentSpec(name="test", family="superposition", backend="transformerlens")
+    run = store.create_run(spec)
+
+    # Do NOT create the directory — it's already missing.
+    archived = store.archive_runs([run.id], tmp_path / "artifacts")
+    assert archived == [run.id]
+
+    active_runs = store.list_runs(limit=100)
+    assert not any(r.id == run.id for r in active_runs)
+
+
+def test_sqlite_store_list_placeholder_runs_before(tmp_path: Path) -> None:
+    store = SQLiteResultStore(tmp_path / "runs.sqlite3", tmp_path / "artifacts")
+
+    poly_run = store.create_run(
+        ExperimentSpec(name="poly", family="polysemanticity", backend="b")
+    )
+    super_run = store.create_run(
+        ExperimentSpec(name="super", family="superposition", backend="b")
+    )
+    real_run = store.create_run(
+        ExperimentSpec(name="real", family="circuit_patching", backend="b")
+    )
+
+    # Only poly and super should appear, and only when id < threshold.
+    before_all = store.list_placeholder_runs_before(real_run.id + 1)
+    ids = {r.id for r in before_all}
+    assert poly_run.id in ids
+    assert super_run.id in ids
+    assert real_run.id not in ids
+
+    # Threshold cuts off runs at or above it.
+    before_first = store.list_placeholder_runs_before(poly_run.id)
+    assert before_first == []

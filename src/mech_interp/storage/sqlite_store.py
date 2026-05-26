@@ -269,13 +269,15 @@ class SQLiteResultStore:
                 payload={"metrics": result.metrics, "artifacts": result.artifacts},
             )
 
-    def list_runs(self, limit: int = 20) -> list[ExperimentRun]:
+    def list_runs(self, limit: int = 20, include_archived: bool = False) -> list[ExperimentRun]:
         self.initialize()
+        archived_filter = "" if include_archived else "WHERE archived_at IS NULL"
         with self._connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT id, spec_name, family, backend, status, artifact_dir, created_at
                 FROM runs
+                {archived_filter}
                 ORDER BY id DESC
                 LIMIT ?
                 """,
@@ -285,6 +287,58 @@ class SQLiteResultStore:
             self._run_from_row(row)
             for row in rows
         ]
+
+    def archive_runs(
+        self,
+        run_ids: list[int],
+        artifact_dir: Path,
+    ) -> list[int]:
+        """Mark runs as archived and move their artifact directories.
+
+        Moves ``artifact_dir/run-NNNNNN`` to ``artifact_dir/archived/run-NNNNNN``
+        and stamps ``archived_at`` on the DB row.  Returns the list of run IDs
+        that were successfully archived (directories that didn't exist are still
+        stamped in the DB).
+        """
+        self.initialize()
+        now = utc_now().isoformat()
+        archived_root = artifact_dir / "archived"
+        archived_ids: list[int] = []
+        for run_id in run_ids:
+            run_dir = artifact_dir / f"run-{run_id:06d}"
+            dest_dir = archived_root / f"run-{run_id:06d}"
+            if run_dir.exists():
+                archived_root.mkdir(parents=True, exist_ok=True)
+                run_dir.rename(dest_dir)
+            with self._connect() as connection:
+                connection.execute(
+                    "UPDATE runs SET archived_at = ? WHERE id = ?",
+                    (now, run_id),
+                )
+            archived_ids.append(run_id)
+        return archived_ids
+
+    def list_placeholder_runs_before(
+        self,
+        before_run_id: int,
+        families: tuple[str, ...] = ("polysemanticity", "superposition"),
+    ) -> list[ExperimentRun]:
+        """Return unarchived runs with id < before_run_id and a placeholder family."""
+        self.initialize()
+        placeholders = ",".join("?" * len(families))
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, spec_name, family, backend, status, artifact_dir, created_at
+                FROM runs
+                WHERE id < ?
+                  AND family IN ({placeholders})
+                  AND archived_at IS NULL
+                ORDER BY id ASC
+                """,
+                (before_run_id, *families),
+            ).fetchall()
+        return [self._run_from_row(row) for row in rows]
 
     def get_result(self, run_id: int) -> ExperimentResult | None:
         self.initialize()
@@ -868,6 +922,7 @@ class SQLiteResultStore:
             "tags": "TEXT NOT NULL DEFAULT '[]'",
             "hypothesis": "TEXT",
             "matrix_id": "INTEGER",
+            "archived_at": "TEXT",
         }.items():
             if name not in columns:
                 connection.execute(f"ALTER TABLE runs ADD COLUMN {name} {definition}")

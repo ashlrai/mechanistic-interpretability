@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mech_interp.backends import create_instrumented_backend
 from mech_interp.experiments.base import Experiment
+from mech_interp.storage.artifacts import resolve_run_artifact_dir
 from mech_interp.types import (
     ExperimentResult,
     ExperimentRun,
@@ -241,7 +242,7 @@ class ACDCLiteExperiment(Experiment):
             pruned_logit_diff=pruned_diff,
         )
 
-        artifact_dir = _run_artifact_dir(run)
+        artifact_dir = resolve_run_artifact_dir(run)
         artifact_dir.mkdir(parents=True, exist_ok=True)
         circuit_json = artifact_dir / "circuit.json"
         circuit_csv = artifact_dir / "edge_scores.csv"
@@ -413,8 +414,4 @@ def _write_circuit_dot(path: Path, circuit: CircuitArtifact) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _run_artifact_dir(run: ExperimentRun) -> Path:
-    expected_name = f"run-{run.id:06d}"
-    if run.artifact_dir.name == expected_name:
-        return run.artifact_dir
-    return run.artifact_dir / expected_name
+

@@ -297,7 +297,12 @@ def run_experiments(
 
 
 @app.command("runs")
-def list_runs(limit: int = 20) -> None:
+def list_runs(
+    limit: int = 20,
+    include_archived: bool = typer.Option(
+        False, "--include-archived", help="Include archived runs."
+    ),
+) -> None:
     """List recent experiment runs from the local SQLite store."""
     config = load_config()
     store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
@@ -307,7 +312,7 @@ def list_runs(limit: int = 20) -> None:
     table.add_column("Family")
     table.add_column("Backend")
     table.add_column("Status")
-    for run in store.list_runs(limit=limit):
+    for run in store.list_runs(limit=limit, include_archived=include_archived):
         table.add_row(
             str(run.id),
             run.spec_name,
@@ -316,6 +321,57 @@ def list_runs(limit: int = 20) -> None:
             run.status.value,
         )
     console.print(table)
+
+
+@app.command("archive-runs")
+def archive_runs(
+    before_run_id: Annotated[
+        int, typer.Option("--before-run-id", min=1, help="Archive placeholder runs with id < N.")
+    ],
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="List runs that would be archived without modifying anything."
+    ),
+) -> None:
+    """Archive stale placeholder runs before a given run ID.
+
+    Moves artifact directories to artifacts/archived/ and stamps archived_at
+    in the database.  Only targets runs with family in {polysemanticity,
+    superposition} — the families that fell back to SpecValidationExperiment
+    before the placeholder gate was introduced.
+
+    Run with --dry-run first to review what will be archived.
+    """
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    runs = store.list_placeholder_runs_before(before_run_id)
+    if not runs:
+        console.print("No placeholder runs found matching the criteria.")
+        return
+
+    table = Table(title=f"{'[dry-run] ' if dry_run else ''}Runs to archive")
+    table.add_column("Run ID")
+    table.add_column("Family")
+    table.add_column("Status")
+    table.add_column("Artifact Dir")
+    for run in runs:
+        artifact_dir = config.project.artifact_dir / f"run-{run.id:06d}"
+        table.add_row(
+            str(run.id),
+            run.family,
+            run.status.value,
+            str(artifact_dir) if artifact_dir.exists() else f"{artifact_dir} (missing)",
+        )
+    console.print(table)
+
+    if dry_run:
+        console.print(f"[yellow]Dry run: {len(runs)} run(s) would be archived.[/yellow]")
+        return
+
+    run_ids = [run.id for run in runs]
+    archived = store.archive_runs(run_ids, config.project.artifact_dir)
+    console.print(
+        f"Archived {len(archived)} run(s). Artifact directories moved to artifacts/archived/."
+    )
 
 
 @app.command("summarize-runs")
