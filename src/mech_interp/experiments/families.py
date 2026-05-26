@@ -12,6 +12,7 @@ class ExperimentFamily(StrEnum):
     ACDC_LITE = "acdc_lite"
     ACDC_EDGE = "acdc_edge"
     REFUSAL_DIRECTION = "refusal_direction"
+    SAE_CROSS_MODEL = "sae_cross_model"
 
 
 class ExperimentBackend(StrEnum):

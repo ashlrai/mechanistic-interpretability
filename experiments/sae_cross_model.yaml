@@ -1,0 +1,33 @@
+name: sae-cross-model-gpt2-gpt2medium
+family: sae_cross_model
+backend: transformerlens
+description: >
+  Train Top-K SAEs on gpt2 and gpt2-medium at the same residual-stream hook site
+  (blocks.4.hook_resid_pre) then compute greedy bipartite alignment between
+  learned feature dictionaries. High cosine similarity (>0.8) between matched
+  decoder directions indicates conserved representational structure across model
+  scales (Gao et al. 2024).
+parameters:
+  source_model: gpt2
+  target_model: gpt2-medium
+  hook_site: blocks.4.hook_resid_pre
+  n_features: 128
+  k: 16
+  epochs: 5
+  batch_size: 256
+  learning_rate: 0.001
+  seed: 42
+  device: cpu
+  high_similarity_threshold: 0.8
+  top_prompts_per_feature: 3
+  prompts:
+    - "The capital of France is Paris."
+    - "The capital of Germany is Berlin."
+    - "Dogs are loyal animals."
+    - "Cats are independent pets."
+    - "The moon orbits the Earth."
+    - "The sun is a star at the center of our solar system."
+    - "Shakespeare wrote Hamlet and Macbeth."
+    - "Einstein developed the theory of relativity."
+    - "Water freezes at zero degrees Celsius."
+    - "The Great Wall of China is visible from space is a myth."

@@ -13,6 +13,13 @@ from rich.console import Console
 from rich.table import Table
 
 from mech_interp.analysis import summarize_recent_runs
+from mech_interp.analysis.feature_labeler import (
+    AnthropicFeatureLabeler,
+    FeatureLabeler,
+    HeuristicFeatureLabeler,
+    OllamaFeatureLabeler,
+    label_run_features,
+)
 from mech_interp.analysis.run_reports import (
     _load_run_artifacts_from_dir,
     environment_provenance,
@@ -47,6 +54,7 @@ queue_app = typer.Typer(help="Manage the local resumable experiment queue.")
 dataset_app = typer.Typer(help="Inspect and validate local datasets.")
 app.add_typer(queue_app, name="queue")
 app.add_typer(dataset_app, name="dataset")
+DEFAULT_CORPUS_OUTPUT_DIR = Path("data/prompts")
 console = Console()
 DEFAULT_REPORT_OUTPUT = Path("artifacts/reports")
 DEFAULT_PROPOSAL_OUTPUT = Path("experiments/proposed")
@@ -57,6 +65,71 @@ def show_config() -> None:
     """Print the resolved application config."""
     config = load_config()
     console.print_json(json.dumps(config.model_dump(mode="json"), indent=2))
+
+
+@app.command("download-corpus")
+def download_corpus_command(
+    name: Annotated[
+        str | None,
+        typer.Option("--name", "-n", help="Corpus name to download (e.g. pile-1k, owt-1k)."),
+    ] = None,
+    max_documents: int = typer.Option(  # noqa: B008
+        1000,
+        "--max-documents",
+        "-m",
+        min=1,
+        help="Maximum number of documents to fetch.",
+    ),
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Output JSONL path. Default: data/prompts/<name>.jsonl"),  # noqa: E501
+    ] = None,
+    list_corpora: bool = typer.Option(  # noqa: B008
+        False,
+        "--list",
+        help="Print all supported corpus names and exit.",
+    ),
+) -> None:
+    """Download a real text corpus from HuggingFace for SAE training.
+
+    Uses only huggingface_hub (already a transitive dep of transformer-lens).
+    Pass --list to see supported corpus names.
+    """
+    from mech_interp.datasets.downloader import CORPORA, corpus_download_summary, download_corpus
+
+    if list_corpora:
+        table = Table(title="Supported Corpora")
+        table.add_column("Name")
+        table.add_column("HF Repo")
+        table.add_column("Split")
+        table.add_column("License")
+        for descriptor in sorted(CORPORA.values(), key=lambda d: d.name):
+            table.add_row(
+                descriptor.name,
+                descriptor.hf_repo,
+                descriptor.hf_split,
+                descriptor.license,
+            )
+        console.print(table)
+        return
+
+    if name is None:
+        console.print("[red]--name is required (or pass --list to see options).[/red]")
+        raise typer.Exit(code=1)
+
+    dest = output or (DEFAULT_CORPUS_OUTPUT_DIR / f"{name}.jsonl")
+    try:
+        dest_path = download_corpus(name, max_documents=max_documents, dest=dest)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    # Reload documents for summary (file is small — at most max_documents lines)
+    from mech_interp.datasets.corpus import load_text_corpus
+    documents = load_text_corpus(dest_path, max_documents=None)
+    summary = corpus_download_summary(dest_path, documents)
+    console.print_json(json.dumps(summary, indent=2))
+    console.print(f"[green]Corpus '{name}' written to {dest_path}[/green]")
 
 
 @app.command("experiments")
@@ -782,6 +855,85 @@ def estimate_activations(
             "max_activation_gib": round(policy.max_activation_gib, 4),
         }
     )
+
+
+@app.command("label-features")
+def label_features(
+    run_id: Annotated[
+        int | None,
+        typer.Option("--run-id", min=1, help="SAE run ID to label."),
+    ] = None,
+    labeler_name: str = typer.Option(
+        "heuristic",
+        "--labeler",
+        help="Labeler backend: heuristic, ollama, or anthropic.",
+    ),
+    ollama_model: str = typer.Option(
+        "llama3.2:3b", "--ollama-model", help="Ollama model name."
+    ),
+    ollama_host: str = typer.Option(
+        "http://localhost:11434", "--ollama-host", help="Ollama server base URL."
+    ),
+    max_features: int = typer.Option(
+        50, "--max-features", min=1, help="Cap on features to label."
+    ),
+) -> None:
+    """Label SAE features with human-readable descriptions using an LLM.
+
+    Reads feature_analysis.json from the run artifact directory and writes
+    feature_labels.json next to it.  Prints a sample of the top-5 labels.
+    """
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+
+    if run_id is None:
+        runs = [r for r in store.list_runs(limit=50) if r.family == "polysemanticity_sae"]
+        if not runs:
+            console.print("[red]No polysemanticity_sae runs found. Use --run-id N.[/red]")
+            raise typer.Exit(code=1)
+        run_id = runs[0].id
+        console.print(f"No --run-id given; using most recent SAE run: {run_id}")
+
+    artifact_dir = config.project.artifact_dir / f"run-{run_id:06d}"
+    if not artifact_dir.is_dir():
+        console.print(f"[red]Artifact directory not found: {artifact_dir}[/red]")
+        raise typer.Exit(code=1)
+
+    chosen = labeler_name.lower()
+    labeler: FeatureLabeler
+    if chosen == "heuristic":
+        labeler = HeuristicFeatureLabeler()
+    elif chosen == "ollama":
+        labeler = OllamaFeatureLabeler(host=ollama_host, model=ollama_model)
+    elif chosen == "anthropic":
+        try:
+            labeler = AnthropicFeatureLabeler()
+        except (ImportError, ValueError) as exc:
+            console.print(f"[red]Cannot create AnthropicFeatureLabeler: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+    else:
+        console.print(
+            f"[red]Unknown labeler '{chosen}'. Choose: heuristic, ollama, anthropic.[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        labels = label_run_features(artifact_dir, labeler, max_features=max_features)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    output_path = artifact_dir / "feature_labels.json"
+    console.print(f"Labeled {len(labels)} features -> {output_path}")
+
+    sample = sorted(labels.items(), key=lambda kv: kv[0])[:5]
+    if sample:
+        table = Table(title=f"Top-5 Feature Labels (run {run_id})")
+        table.add_column("Feature Index")
+        table.add_column("Label")
+        for idx, lbl in sample:
+            table.add_row(str(idx), lbl)
+        console.print(table)
 
 
 def _run_bundle(run_id: int) -> dict[str, Any]:
