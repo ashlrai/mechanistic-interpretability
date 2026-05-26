@@ -1,0 +1,39 @@
+name: sparse-probing-factual-vs-random
+family: sparse_probing
+backend: transformerlens
+description: >
+  Train an L1-regularised sparse linear probe at blocks.6.hook_resid_pre on
+  gpt2-small to distinguish factual-recall prompts from random/non-factual
+  prompts. The L1 penalty drives most weights to zero, leaving an interpretable
+  sparse direction corresponding to the factual-recall concept.
+
+parameters:
+  model: gpt2-small
+  device: cpu
+  hook_site: blocks.6.hook_resid_pre
+  l1_alpha: 0.01
+  epochs: 200
+  train_fraction: 0.8
+  seed: 42
+  positive_prompts:
+    - "The capital of France is"
+    - "The play Hamlet was written by"
+    - "The largest planet in the Solar System is"
+    - "The official currency of Japan is the"
+    - "The speed of light in a vacuum is approximately"
+    - "The author of the novel 1984 is"
+    - "The chemical symbol for gold is"
+    - "The year the Berlin Wall fell is"
+    - "The country where the Amazon River flows through is"
+    - "The inventor of the telephone is"
+  negative_prompts:
+    - "The weather today might be"
+    - "I enjoy walking in the"
+    - "Please pass the salt and"
+    - "The movie was quite entertaining because"
+    - "She smiled and then said"
+    - "After a long day I like to"
+    - "The colors of the rainbow include"
+    - "He opened the door and found"
+    - "In the morning I usually"
+    - "They decided to go to the"
