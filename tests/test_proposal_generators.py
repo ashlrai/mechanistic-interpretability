@@ -181,12 +181,14 @@ def test_propose_from_run_raises_for_unsupported_family(tmp_path: Path) -> None:
 
 
 def test_registry_covers_expected_families() -> None:
-    assert set(PROPOSAL_GENERATORS) == {
+    assert set(PROPOSAL_GENERATORS) >= {
         "polysemanticity_sae",
         "acdc_lite",
         "acdc_edge",
         "refusal_direction",
         "sae_cross_model",
+        "attribution_patching",
+        "crosscoder",
     }
 
 

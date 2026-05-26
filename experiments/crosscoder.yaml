@@ -1,0 +1,26 @@
+name: crosscoder_gpt2_distilgpt2
+family: crosscoder
+backend: transformerlens
+description: >
+  Crosscoder (Lindsey et al., 2024) trained jointly on gpt2 and distilgpt2
+  residual-stream activations at the final layer. Features near model_score=0
+  are conserved across models; features near ±1 are model-specific.
+parameters:
+  source_model: gpt2
+  target_model: distilgpt2
+  hook_site: blocks.5.hook_resid_post
+  n_features: 64
+  k: 8
+  epochs: 5
+  batch_size: 128
+  learning_rate: 0.001
+  seed: 42
+  device: cpu
+  model_specific_threshold: 0.5
+  top_divergent_features: 20
+  prompts:
+    - "The Eiffel Tower is located in"
+    - "Photosynthesis converts sunlight into"
+    - "The first president of the United States was"
+    - "Water boils at 100 degrees"
+    - "Romeo and Juliet was written by"

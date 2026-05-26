@@ -129,6 +129,20 @@ def experiment_for_spec(spec: ExperimentSpec) -> Experiment:
     if spec.family == "sae_cross_model":
         from mech_interp.experiments.sae_cross_model import SAECrossModelExperiment
         return SAECrossModelExperiment()
+    if spec.family == "attribution_patching":
+        from mech_interp.experiments.attribution_patching import AttributionPatchingExperiment
+        return AttributionPatchingExperiment()
+    if spec.family == "crosscoder":
+        from mech_interp.experiments.crosscoder import CrosscoderExperiment
+    if spec.family == "direct_logit_attribution":
+        from mech_interp.experiments.direct_logit_attribution import (
+            DirectLogitAttributionExperiment,
+        )
+        return DirectLogitAttributionExperiment()
+    if spec.family == "sparse_probing":
+        from mech_interp.experiments.sparse_probing import SparseProbingExperiment
+        return SparseProbingExperiment()
+        return CrosscoderExperiment()
     if spec.parameters.get("runner") == "activation_capture":
         return ActivationCaptureExperiment()
     if spec.parameters.get("runner") == "transformerlens_smoke":

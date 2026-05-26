@@ -13,6 +13,10 @@ class ExperimentFamily(StrEnum):
     ACDC_EDGE = "acdc_edge"
     REFUSAL_DIRECTION = "refusal_direction"
     SAE_CROSS_MODEL = "sae_cross_model"
+    DIRECT_LOGIT_ATTRIBUTION = "direct_logit_attribution"
+    SPARSE_PROBING = "sparse_probing"
+    ATTRIBUTION_PATCHING = "attribution_patching"
+    CROSSCODER = "crosscoder"
 
 
 class ExperimentBackend(StrEnum):

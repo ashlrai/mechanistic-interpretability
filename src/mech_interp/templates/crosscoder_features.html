@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Crosscoder Feature Browser &mdash; Run {{ run.id }}</h1>
+<p class="muted">
+  {{ run.spec_name }} / {{ run.family }}
+  &nbsp;&bull;&nbsp;
+  <strong>{{ stats.source_model }}</strong> vs <strong>{{ stats.target_model }}</strong>
+  &nbsp;&bull;&nbsp;
+  hook: <code>{{ stats.hook_site }}</code>
+  &nbsp;&bull;&nbsp;
+  <a href="/runs/{{ run.id }}">back to run detail</a>
+</p>
+
+<section>
+  <div class="status-grid">
+    <div class="status-card"><span class="muted">Total features</span><strong>{{ stats.total }}</strong></div>
+    <div class="status-card"><span class="muted">Live</span><strong>{{ stats.live }}</strong></div>
+    <div class="status-card"><span class="muted">Dead</span><strong>{{ stats.dead }}</strong></div>
+    <div class="status-card"><span class="muted">Conserved</span><strong>{{ stats.conserved }}</strong></div>
+    <div class="status-card"><span class="muted">Model-specific</span><strong>{{ stats.model_specific }}</strong></div>
+    <div class="status-card"><span class="muted">Mean / token</span><strong>{{ "%.3f"|format(stats.mean_per_token) }}</strong></div>
+  </div>
+
+  <div style="margin:12px 0 4px">
+    <strong>model_score legend:</strong>
+    <span style="color:#c0392b">&minus;1 = {{ stats.source_model }}-only</span>
+    &nbsp;&nbsp;
+    <span style="color:#888">0 = conserved</span>
+    &nbsp;&nbsp;
+    <span style="color:#2980b9">+1 = {{ stats.target_model }}-only</span>
+  </div>
+
+  <div class="actions">
+    <label>Filter:
+      <select id="filter-sel" onchange="applyFilter()">
+        <option value="all">All</option>
+        <option value="alive">Alive</option>
+        <option value="dead">Dead</option>
+        <option value="conserved">Conserved (|score| &le; threshold)</option>
+        <option value="specific">Model-specific (|score| &gt; threshold)</option>
+        <option value="source">Source-leaning (score &lt; 0)</option>
+        <option value="target">Target-leaning (score &gt; 0)</option>
+      </select>
+    </label>
+    <label>Sort by:
+      <select id="sort-sel" onchange="applySort()">
+        <option value="abs_score">|model_score|</option>
+        <option value="model_score">model_score</option>
+        <option value="max_activation">Max activation</option>
+        <option value="feature_index">Index</option>
+      </select>
+    </label>
+  </div>
+
+  <table id="feature-table">
+    <thead>
+      <tr>
+        <th>Index</th>
+        <th>model_score</th>
+        <th style="width:160px">Score bar</th>
+        <th>Max act.</th>
+        <th>Dead</th>
+        <th>Coherence</th>
+        <th>Top prompt (first)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in features %}
+      {% set score = f.model_score %}
+      {% set abs_score = f.model_score | abs %}
+      {% set threshold = stats.threshold %}
+      {% set is_specific = abs_score > threshold %}
+      <tr class="feature-row {{ 'dead' if f.dead else 'alive' }} {{ 'specific' if is_specific else 'conserved' }} {{ 'source-leaning' if score < 0 else 'target-leaning' }}"
+          data-index="{{ f.feature_index }}"
+          data-score="{{ score }}"
+          data-abs-score="{{ abs_score }}"
+          data-max="{{ f.max_activation }}"
+          style="cursor:pointer"
+          onclick="toggleDetail(this)">
+        <td>{{ f.feature_index }}</td>
+        <td style="font-family:monospace">{{ "%.3f"|format(score) }}</td>
+        <td>
+          {# Colored bar: negative = red (source), positive = blue (target), grey at 0 #}
+          <div style="position:relative;height:14px;background:#e8e8e8;border-radius:3px;overflow:hidden">
+            {% if score < 0 %}
+            <div style="position:absolute;right:50%;width:{{ (abs_score * 50)|round|int }}%;height:100%;background:#c0392b;border-radius:3px 0 0 3px"></div>
+            {% elif score > 0 %}
+            <div style="position:absolute;left:50%;width:{{ (abs_score * 50)|round|int }}%;height:100%;background:#2980b9;border-radius:0 3px 3px 0"></div>
+            {% else %}
+            <div style="position:absolute;left:50%;transform:translateX(-50%);width:2px;height:100%;background:#aaa"></div>
+            {% endif %}
+          </div>
+        </td>
+        <td>{{ "%.4f"|format(f.max_activation) }}</td>
+        <td>{% if f.dead %}<span style="color:#b5400a">dead</span>{% else %}&mdash;{% endif %}</td>
+        <td>{{ "%.3f"|format(f.coherence_score) if f.coherence_score is not none else "&mdash;"|safe }}</td>
+        <td class="muted" style="max-width:320px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
+          {{ f.top_prompts[0] if f.top_prompts else "" }}
+        </td>
+      </tr>
+      <tr class="detail-row" style="display:none">
+        <td colspan="7">
+          <div style="padding:8px 0">
+            {% if f.decoder_norm_per_model %}
+            <strong>Decoder norms:</strong>
+            {% for norm in f.decoder_norm_per_model %}
+            model_{{ loop.index0 }}={{ "%.4f"|format(norm) }}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+            <br>
+            {% endif %}
+            {% if f.top_prompts %}
+            <strong>Top prompts:</strong>
+            <ol style="margin:6px 0 0 20px;padding:0">
+              {% for p in f.top_prompts %}
+              <li><code style="white-space:pre-wrap">{{ p }}</code></li>
+              {% endfor %}
+            </ol>
+            {% else %}
+            <span class="muted">No top prompts recorded.</span>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not features %}
+  <p class="muted">No features found in feature_analysis.json.</p>
+  {% endif %}
+</section>
+
+<script>
+var THRESHOLD = {{ stats.threshold }};
+
+function toggleDetail(row) {
+  var next = row.nextElementSibling;
+  if (next && next.classList.contains('detail-row')) {
+    next.style.display = next.style.display === 'none' ? '' : 'none';
+  }
+}
+
+function applyFilter() {
+  var val = document.getElementById('filter-sel').value;
+  document.querySelectorAll('.feature-row').forEach(function(row) {
+    var detail = row.nextElementSibling;
+    var show = true;
+    var score = parseFloat(row.dataset.score);
+    var absScore = parseFloat(row.dataset.absScore);
+    var isDead = row.classList.contains('dead');
+    if (val === 'alive') show = !isDead;
+    else if (val === 'dead') show = isDead;
+    else if (val === 'conserved') show = !isDead && absScore <= THRESHOLD;
+    else if (val === 'specific') show = !isDead && absScore > THRESHOLD;
+    else if (val === 'source') show = !isDead && score < 0;
+    else if (val === 'target') show = !isDead && score > 0;
+    row.style.display = show ? '' : 'none';
+    if (!show && detail) detail.style.display = 'none';
+  });
+}
+
+function applySort() {
+  var key = document.getElementById('sort-sel').value;
+  var tbody = document.querySelector('#feature-table tbody');
+  var rows = Array.from(tbody.querySelectorAll('.feature-row'));
+  var pairs = rows.map(function(r) { return { row: r, detail: r.nextElementSibling }; });
+  pairs.sort(function(a, b) {
+    var va, vb;
+    if (key === 'feature_index') {
+      return parseInt(a.row.dataset.index, 10) - parseInt(b.row.dataset.index, 10);
+    } else if (key === 'model_score') {
+      va = parseFloat(a.row.dataset.score); vb = parseFloat(b.row.dataset.score);
+      return vb - va;
+    } else if (key === 'abs_score') {
+      va = parseFloat(a.row.dataset.absScore); vb = parseFloat(b.row.dataset.absScore);
+      return vb - va;
+    } else {
+      va = parseFloat(a.row.dataset.max); vb = parseFloat(b.row.dataset.max);
+      return vb - va;
+    }
+  });
+  pairs.forEach(function(p) {
+    tbody.appendChild(p.row);
+    if (p.detail) tbody.appendChild(p.detail);
+  });
+}
+</script>
+{% endblock %}
