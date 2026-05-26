@@ -13,6 +13,8 @@ fallback for ``family: polysemanticity``. The pipeline is:
 from __future__ import annotations
 
 import json
+import logging
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,7 @@ from mech_interp.sae import (
     save_sae_weights,
     train_top_k_sae,
 )
+from mech_interp.storage.artifacts import resolve_run_artifact_dir
 from mech_interp.types import (
     ExperimentResult,
     ExperimentRun,
@@ -32,6 +35,8 @@ from mech_interp.types import (
     InstrumentedModelBackend,
     RunStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class _ArtifactPolicy(BaseModel):
@@ -58,6 +63,9 @@ class PolysemanticitySAESpec(BaseModel):
     prompts: list[str] | None = None
     dataset_path: str | None = None
     dataset_sha256: str | None = None
+    corpus_path: str | None = None
+    seq_len: int = Field(default=128, ge=1)
+    max_tokens: int = Field(default=10_000, ge=1)
     artifact_policy: _ArtifactPolicy = Field(default_factory=_ArtifactPolicy)
 
     @property
@@ -87,7 +95,6 @@ class PolysemanticitySAEExperiment(Experiment):
             raise ValueError(
                 f"k={config.k} must be <= n_features={config.n_features} for a Top-K SAE."
             )
-        prompts = _resolve_prompts(config)
 
         backend = self.backend or create_instrumented_backend(
             spec.backend,
@@ -96,13 +103,28 @@ class PolysemanticitySAEExperiment(Experiment):
                 "device": config.device,
             },
         )
-        captured = backend.capture_activations(prompts, [config.hook_site])
-        if config.hook_site not in captured:
-            raise ValueError(
-                f"Backend did not return activations for hook site '{config.hook_site}'."
-            )
-        activation_tensor = captured[config.hook_site]
-        flat, prompt_for_token = _flatten_with_prompt_map(activation_tensor, prompts)
+
+        if config.corpus_path is not None:
+            if config.prompts is not None:
+                warnings.warn(
+                    "Both 'prompts' and 'corpus_path' are set; ignoring 'prompts' and "
+                    "using corpus_path instead.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            flat, prompt_for_token = _activations_from_corpus(config, backend)
+            n_input_docs = len(set(prompt_for_token))
+        else:
+            prompts = _resolve_prompts(config)
+            captured = backend.capture_activations(prompts, [config.hook_site])
+            if config.hook_site not in captured:
+                raise ValueError(
+                    f"Backend did not return activations for hook site '{config.hook_site}'."
+                )
+            activation_tensor = captured[config.hook_site]
+            flat, prompt_for_token = _flatten_with_prompt_map(activation_tensor, prompts)
+            n_input_docs = len(prompts)
+
         # SAE training is pinned to fp32 — MPS sometimes degrades silently in fp16.
         flat = flat.detach().to(dtype=torch.float32)
 
@@ -134,7 +156,7 @@ class PolysemanticitySAEExperiment(Experiment):
             top_prompts_per_feature=config.artifact_policy.top_prompts_per_feature,
         )
 
-        artifact_dir = _run_artifact_dir(run)
+        artifact_dir = resolve_run_artifact_dir(run)
         artifact_dir.mkdir(parents=True, exist_ok=True)
         artifacts: dict[str, str] = {}
 
@@ -179,7 +201,7 @@ class PolysemanticitySAEExperiment(Experiment):
             artifacts=artifacts,
             notes=(
                 f"Trained Top-{config.k} SAE with {config.n_features} features on "
-                f"{flat.shape[0]} tokens from {len(prompts)} prompts; "
+                f"{flat.shape[0]} tokens from {n_input_docs} documents; "
                 f"{analysis.live_count}/{sae.n_features} features active."
             ),
         )
@@ -204,6 +226,72 @@ def _resolve_prompts(config: PolysemanticitySAESpec) -> list[str]:
             )
         return [record.prompt for record in dataset.records]
     raise ValueError("polysemanticity_sae requires 'prompts' or 'dataset_path'.")
+
+
+def _activations_from_corpus(
+    config: PolysemanticitySAESpec,
+    backend: InstrumentedModelBackend,
+) -> tuple[Any, list[str]]:
+    """Load corpus, tokenize it, run a forward pass, and return flat activations.
+
+    The token→document map uses ``"doc_<n>"`` labels (with the first 60 chars of the
+    document text appended) so the feature analysis JSON stays readable without
+    storing full document text for every token position.
+    """
+    import torch
+
+    from mech_interp.datasets.corpus import load_text_corpus, tokenize_corpus
+
+    corpus_path = Path(config.corpus_path)  # type: ignore[arg-type]
+    documents = load_text_corpus(corpus_path, max_documents=None)
+    if not documents:
+        raise ValueError(f"corpus_path '{corpus_path}' produced no documents.")
+
+    # Build short labels: "doc_0: The quick brown fox..." (≤60 chars of text)
+    doc_labels = [
+        f"doc_{i}: {doc[:60]}" for i, doc in enumerate(documents)
+    ]
+
+    # tokenize_corpus needs a HookedTransformer; access via backend
+    model = getattr(backend, "model", None)
+    if model is None:
+        raise AttributeError(
+            "Backend has no 'model' attribute; cannot tokenize corpus. "
+            "Only the TransformerLens backend supports corpus_path."
+        )
+
+    token_tensor = tokenize_corpus(
+        model,
+        documents,
+        seq_len=config.seq_len,
+        max_tokens=config.max_tokens,
+    )
+    # token_tensor: (n_docs, seq_len)  int64
+    n_docs_used = token_tensor.shape[0]
+    labels_used = doc_labels[:n_docs_used]
+
+    # Decode token ids back into text strings for capture_activations, which
+    # expects a list[str]. Each row becomes a single string by decoding its tokens.
+    tokenizer = model.tokenizer
+    text_inputs = [
+        tokenizer.decode(token_tensor[i].tolist(), skip_special_tokens=True)
+        for i in range(n_docs_used)
+    ]
+
+    captured = backend.capture_activations(text_inputs, [config.hook_site])
+    if config.hook_site not in captured:
+        raise ValueError(
+            f"Backend did not return activations for hook site '{config.hook_site}'."
+        )
+    activation_tensor = captured[config.hook_site]
+    flat, _ = _flatten_with_prompt_map(activation_tensor, text_inputs)
+
+    # Build token-level label list using doc labels (not raw text) for readability
+    shape = tuple(activation_tensor.shape)
+    seq = shape[1] if len(shape) == 3 else 1
+    prompt_for_token = [labels_used[i] for i in range(n_docs_used) for _ in range(seq)]
+
+    return flat, prompt_for_token
 
 
 def _flatten_with_prompt_map(activation_tensor: Any, prompts: list[str]) -> tuple[Any, list[str]]:
@@ -236,10 +324,3 @@ def _flatten_with_prompt_map(activation_tensor: Any, prompts: list[str]) -> tupl
         flat = torch.as_tensor(flat)
     prompt_for_token = [prompts[i] for i in range(batch) for _ in range(seq)]
     return flat, prompt_for_token
-
-
-def _run_artifact_dir(run: ExperimentRun) -> Path:
-    expected_name = f"run-{run.id:06d}"
-    if run.artifact_dir.name == expected_name:
-        return run.artifact_dir
-    return run.artifact_dir / expected_name

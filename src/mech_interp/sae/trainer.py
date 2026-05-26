@@ -62,6 +62,12 @@ def train_top_k_sae(
             f"train_top_k_sae expects (n_tokens, d_model); got shape {tuple(activations.shape)}"
         )
 
+    # MPS topk and scatter ops have known instability in fp16/bfloat16. Pin to
+    # float32 before touching the SAE so training is numerically stable regardless
+    # of what dtype the backend returned.
+    if device == "mps":
+        activations = activations.float()
+
     torch.manual_seed(seed)
     n_tokens, d_model = activations.shape
     sae = TopKSAE(input_dim=d_model, n_features=n_features, k=k, dtype=activations.dtype)

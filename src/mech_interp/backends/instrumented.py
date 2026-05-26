@@ -49,7 +49,22 @@ class TransformerLensBackend:
             self.load()
         assert self.model is not None
         _, cache = self.model.run_with_cache(prompts, names_filter=lambda name: name in sites)
-        return {site: cache[site] for site in sites if site in cache}
+        result: dict[str, Any] = {}
+        for site in sites:
+            if site not in cache:
+                continue
+            tensor = cache[site]
+            # MPS can silently produce float16/bfloat16 activations even when the model
+            # is nominally float32. Downstream SAE training assumes float32, so we cast
+            # here unconditionally when device is MPS rather than letting dtype
+            # mismatches surface as cryptic GEMM errors later.
+            if self.device == "mps" and hasattr(tensor, "to") and hasattr(tensor, "dtype"):
+                import torch
+
+                if tensor.dtype != torch.float32:
+                    tensor = tensor.to(dtype=torch.float32)
+            result[site] = tensor
+        return result
 
     def run_intervention(self, prompt: str, interventions: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError(
