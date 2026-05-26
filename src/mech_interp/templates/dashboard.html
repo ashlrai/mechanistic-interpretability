@@ -3,7 +3,10 @@
 <h1>Dashboard</h1>
 {% include "status_cards.html" %}
 <section>
-  <h2>Recent Runs</h2>
+  <div class="actions">
+    <h2 style="margin:0">Recent Runs</h2>
+    <a class="button" href="/timeline">View timeline &rarr;</a>
+  </div>
   <table>
     <tr><th>Run</th><th>Spec</th><th>Family</th><th>Status</th></tr>
     {% for run in runs %}

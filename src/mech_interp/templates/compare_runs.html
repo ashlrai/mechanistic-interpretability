@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.compare-header { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
+.run-card { background:white; border:1px solid #d8dee4; border-radius:8px; padding:16px; }
+.run-card h2 { margin:0 0 6px 0; font-size:1.1rem; }
+.run-card .muted { font-size:0.85rem; }
+.badge-better { background:#dcfce7; color:#166534; border-radius:4px; padding:1px 7px; font-size:0.75rem; font-weight:600; }
+.badge-worse  { background:#fee2e2; color:#991b1b; border-radius:4px; padding:1px 7px; font-size:0.75rem; font-weight:600; }
+.badge-neutral{ background:#f1f5f9; color:#475569; border-radius:4px; padding:1px 7px; font-size:0.75rem; font-weight:600; }
+.highlight-row td { background:#fefce8; }
+details summary { cursor:pointer; font-weight:600; padding:8px 0; }
+.missing { color:#94a3b8; font-style:italic; }
+.col-a { color:#1a5a8a; font-weight:600; }
+.col-b { color:#8a4a1a; font-weight:600; }
+</style>
+
+<h1>Compare Runs</h1>
+
+<!-- Run header cards -->
+<div class="compare-header">
+  <div class="run-card">
+    <h2 class="col-a">Run {{ run_a.id }} — A</h2>
+    <div><strong>Spec:</strong> {{ run_a.spec_name }}</div>
+    <div><strong>Family:</strong> {{ run_a.family }}</div>
+    <div><strong>Status:</strong> {{ run_a.status.value }}</div>
+    <div class="muted">{{ run_a.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</div>
+  </div>
+  <div class="run-card">
+    <h2 class="col-b">Run {{ run_b.id }} — B</h2>
+    <div><strong>Spec:</strong> {{ run_b.spec_name }}</div>
+    <div><strong>Family:</strong> {{ run_b.family }}</div>
+    <div><strong>Status:</strong> {{ run_b.status.value }}</div>
+    <div class="muted">{{ run_b.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</div>
+  </div>
+</div>
+
+<!-- Metrics diff table -->
+<section>
+  <h2>Metrics</h2>
+  {% if metric_rows %}
+  <table>
+    <tr>
+      <th>Metric</th>
+      <th class="col-a">Run {{ run_a.id }} (A)</th>
+      <th class="col-b">Run {{ run_b.id }} (B)</th>
+      <th>Diff</th>
+    </tr>
+    {% for row in metric_rows %}
+    <tr {% if row.highlight %}class="highlight-row"{% endif %}>
+      <td>{{ row.key }}</td>
+      <td>{% if row.val_a is not none %}{{ "%.6g" | format(row.val_a) }}{% else %}<span class="missing">—</span>{% endif %}</td>
+      <td>{% if row.val_b is not none %}{{ "%.6g" | format(row.val_b) }}{% else %}<span class="missing">—</span>{% endif %}</td>
+      <td>
+        {% if row.pct_diff is not none %}
+          {% if row.pct_diff > 0 %}+{% endif %}{{ "%.1f" | format(row.pct_diff * 100) }}%
+          {% if row.highlight %}
+            <span class="badge-{{ row.badge_class }}">{{ row.badge_class }}</span>
+          {% endif %}
+        {% else %}<span class="missing">—</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No metrics recorded for either run.</p>
+  {% endif %}
+</section>
+
+<!-- Parameters diff -->
+<section>
+  <h2>Parameters diff <span class="muted">(changed keys only)</span></h2>
+  {% if param_rows %}
+  <table>
+    <tr>
+      <th>Parameter</th>
+      <th class="col-a">Run {{ run_a.id }} (A)</th>
+      <th class="col-b">Run {{ run_b.id }} (B)</th>
+    </tr>
+    {% for row in param_rows %}
+    <tr>
+      <td>{{ row.key }}</td>
+      <td>{% if row.val_a is not none %}{{ row.val_a }}{% else %}<span class="missing">—</span>{% endif %}</td>
+      <td>{% if row.val_b is not none %}{{ row.val_b }}{% else %}<span class="missing">—</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Parameters are identical (or neither run has parameters).</p>
+  {% endif %}
+</section>
+
+<!-- Environment diff (collapsible) -->
+<section>
+  <details>
+    <summary>Environment diff</summary>
+    {% if env_rows %}
+    <table>
+      <tr>
+        <th>Key</th>
+        <th class="col-a">Run {{ run_a.id }} (A)</th>
+        <th class="col-b">Run {{ run_b.id }} (B)</th>
+      </tr>
+      {% for row in env_rows %}
+      <tr {% if row.differs %}class="highlight-row"{% endif %}>
+        <td>{{ row.key }}</td>
+        <td>{% if row.val_a is not none %}{{ row.val_a }}{% else %}<span class="missing">—</span>{% endif %}</td>
+        <td>{% if row.val_b is not none %}{{ row.val_b }}{% else %}<span class="missing">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">No environment.json found for either run.</p>
+    {% endif %}
+  </details>
+</section>
+
+<!-- Artifact links -->
+<section>
+  <h2>Artifacts</h2>
+  <div class="compare-header">
+    <div>
+      <strong class="col-a">Run {{ run_a.id }} (A)</strong>
+      {% if artifact_links_a %}
+      <ul>
+        {% for link in artifact_links_a %}
+        <li>{% if link.href %}<a href="{{ link.href }}">{{ link.name }}</a>{% else %}{{ link.name }} <span class="muted">(missing)</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted">No artifacts.</p>{% endif %}
+    </div>
+    <div>
+      <strong class="col-b">Run {{ run_b.id }} (B)</strong>
+      {% if artifact_links_b %}
+      <ul>
+        {% for link in artifact_links_b %}
+        <li>{% if link.href %}<a href="{{ link.href }}">{{ link.name }}</a>{% else %}{{ link.name }} <span class="muted">(missing)</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted">No artifacts.</p>{% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

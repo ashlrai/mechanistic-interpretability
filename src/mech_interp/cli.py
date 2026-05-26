@@ -26,9 +26,19 @@ from mech_interp.analysis.run_reports import (
     inspect_run_family,
     write_aggregate_reports,
 )
+from mech_interp.analysis.sweep_reports import summarize_sweep, write_sweep_report
+from mech_interp.cockpit_compare import (
+    build_env_diff_rows,
+    build_metric_rows,
+    build_param_diff_rows,
+)
 from mech_interp.config import load_config
 from mech_interp.experiments import load_experiment_specs
-from mech_interp.experiments.registry import ExperimentSpecValidationError
+from mech_interp.experiments.registry import (
+    ExperimentSpecValidationError,
+    load_experiment_spec,
+    load_experiment_specs_from_file,
+)
 from mech_interp.orchestration import (
     ActivationEstimate,
     ExperimentRunner,
@@ -936,6 +946,114 @@ def label_features(
         console.print(table)
 
 
+@app.command("compare-runs")
+def compare_runs_cli(
+    left: Annotated[int, typer.Option("--left", min=1, help="Run ID for the A side.")],
+    right: Annotated[int, typer.Option("--right", min=1, help="Run ID for the B side.")],
+) -> None:
+    """Print a side-by-side diff of two same-family runs as a Rich table."""
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+
+    all_runs = store.list_runs(limit=500)
+    run_a = next((r for r in all_runs if r.id == left), None)
+    run_b = next((r for r in all_runs if r.id == right), None)
+
+    if run_a is None:
+        console.print(f"[red]Run {left} not found.[/red]")
+        raise typer.Exit(code=1)
+    if run_b is None:
+        console.print(f"[red]Run {right} not found.[/red]")
+        raise typer.Exit(code=1)
+    if run_a.family != run_b.family:
+        console.print(
+            f"[red]Runs {left} and {right} have different families "
+            f"('{run_a.family}' vs '{run_b.family}'). "
+            "Comparison requires matching families.[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    result_a = store.get_result(left)
+    result_b = store.get_result(right)
+    spec_a = store.get_run_spec(left) or {}
+    spec_b = store.get_run_spec(right) or {}
+    metrics_a: dict[str, float] = result_a.metrics if result_a else {}
+    metrics_b: dict[str, float] = result_b.metrics if result_b else {}
+    params_a: dict[str, Any] = spec_a.get("parameters", {}) if isinstance(spec_a, dict) else {}
+    params_b: dict[str, Any] = spec_b.get("parameters", {}) if isinstance(spec_b, dict) else {}
+
+    # Header
+    console.print(
+        f"[bold]Compare Run {left} (A)  vs  Run {right} (B)[/bold]  family={run_a.family}"
+    )
+    console.print(f"  A: {run_a.spec_name}  [{run_a.status.value}]")
+    console.print(f"  B: {run_b.spec_name}  [{run_b.status.value}]")
+    console.print()
+
+    # Metrics table
+    metric_rows = build_metric_rows(metrics_a, metrics_b)
+    if metric_rows:
+        tbl = Table(title="Metrics")
+        tbl.add_column("Metric")
+        tbl.add_column(f"Run {left} (A)")
+        tbl.add_column(f"Run {right} (B)")
+        tbl.add_column("Diff")
+        for row in metric_rows:
+            va = f"{row['val_a']:.6g}" if row["val_a"] is not None else "—"
+            vb = f"{row['val_b']:.6g}" if row["val_b"] is not None else "—"
+            if row["pct_diff"] is not None:
+                sign = "+" if row["pct_diff"] > 0 else ""
+                diff_str = f"{sign}{row['pct_diff'] * 100:.1f}%"
+                if row["highlight"]:
+                    if row["badge_class"] == "better":
+                        colour = "green"
+                    elif row["badge_class"] == "worse":
+                        colour = "red"
+                    else:
+                        colour = "yellow"
+                    diff_str = f"[{colour}]{diff_str}[/{colour}]"
+            else:
+                diff_str = "—"
+            tbl.add_row(row["key"], va, vb, diff_str)
+        console.print(tbl)
+    else:
+        console.print("[dim]No metrics recorded for either run.[/dim]")
+
+    # Parameters diff
+    param_rows = build_param_diff_rows(params_a, params_b)
+    if param_rows:
+        ptbl = Table(title="Changed Parameters")
+        ptbl.add_column("Parameter")
+        ptbl.add_column(f"Run {left} (A)")
+        ptbl.add_column(f"Run {right} (B)")
+        for row in param_rows:
+            ptbl.add_row(
+                row["key"],
+                str(row["val_a"]) if row["val_a"] is not None else "—",
+                str(row["val_b"]) if row["val_b"] is not None else "—",
+            )
+        console.print(ptbl)
+
+    # Environment diff
+    from mech_interp.cockpit import _read_environment
+    env_a = _read_environment(left, result_a, config.project.artifact_dir)
+    env_b = _read_environment(right, result_b, config.project.artifact_dir)
+    env_rows = build_env_diff_rows(env_a, env_b)
+    diff_env = [r for r in env_rows if r["differs"]]
+    if diff_env:
+        etbl = Table(title="Environment Drift (differing keys)")
+        etbl.add_column("Key")
+        etbl.add_column(f"Run {left} (A)")
+        etbl.add_column(f"Run {right} (B)")
+        for row in diff_env:
+            etbl.add_row(
+                row["key"],
+                str(row["val_a"]) if row["val_a"] is not None else "—",
+                str(row["val_b"]) if row["val_b"] is not None else "—",
+            )
+        console.print(etbl)
+
+
 def _run_bundle(run_id: int) -> dict[str, Any]:
     config = load_config()
     store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
@@ -1044,3 +1162,279 @@ def _metric_summary(row: dict[str, Any], metric: str | None) -> str:
 
 def _json_cell(value: Any) -> str:
     return json.dumps(value, default=str, sort_keys=True)
+
+
+# ---------------------------------------------------------------------------
+# mech sweep
+# ---------------------------------------------------------------------------
+
+
+def _parse_axis_value(raw: str) -> Any:
+    """Try to parse *raw* as int, then float, then return as-is (str)."""
+    try:
+        return int(raw)
+    except ValueError:
+        pass
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+    # List literal like "[0]" or "[0,1,2]"
+    stripped = raw.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        inner = stripped[1:-1].strip()
+        if not inner:
+            return []
+        return [_parse_axis_value(item.strip()) for item in inner.split(",")]
+    return raw
+
+
+def _parse_axis(spec: str) -> tuple[str, list[Any]]:
+    """Parse ``name=v1,v2,v3`` into ``(name, [v1, v2, v3])``.
+
+    Values that look like integer or float literals are converted; strings are
+    kept as-is.  The special case ``name=[0],[1],[2]`` (list-valued axes) is
+    handled by treating comma-separated bracketed items as atomic tokens.
+    """
+    if "=" not in spec:
+        raise ValueError(f"Invalid --axis value {spec!r}: expected 'name=v1,v2,...'")
+    name, _, raw_values = spec.partition("=")
+    name = name.strip()
+    if not name:
+        raise ValueError(f"Invalid --axis value {spec!r}: axis name is empty")
+
+    # Tokenise respecting bracket nesting so "[0],[1]" becomes ["[0]","[1]"]
+    tokens: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for ch in raw_values:
+        if ch == "[":
+            depth += 1
+            current.append(ch)
+        elif ch == "]":
+            depth -= 1
+            current.append(ch)
+        elif ch == "," and depth == 0:
+            tokens.append("".join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        tokens.append("".join(current).strip())
+
+    values = [_parse_axis_value(t) for t in tokens if t]
+    if not values:
+        raise ValueError(f"Invalid --axis value {spec!r}: no values after '='")
+    return name, values
+
+
+@app.command("sweep")
+def sweep_command(
+    base: Annotated[
+        Path,
+        typer.Option("--base", "-b", help="Base experiment YAML to sweep over."),
+    ],
+    axis: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--axis",
+            "-a",
+            help="Axis spec: 'name=v1,v2,v3'.  Repeat for multiple axes.",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Path for the generated matrix YAML."),
+    ] = Path("experiments/sweeps/sweep.yaml"),
+    execute: bool = typer.Option(  # noqa: B008
+        False,
+        "--execute",
+        help="Run the generated sweep specs immediately after writing the YAML.",
+    ),
+) -> None:
+    """Generate (and optionally run) a matrix sweep from a base experiment spec.
+
+    Parses --axis name=v1,v2,v3 arguments, builds a matrix: YAML on top of the
+    base spec, writes it to --output, then optionally executes all generated
+    specs via ExperimentRunner.
+    """
+    if not axis:
+        console.print("[red]At least one --axis is required.[/red]")
+        raise typer.Exit(code=1)
+
+    # Validate base spec loads cleanly
+    try:
+        base_spec = load_experiment_spec(base)
+    except ExperimentSpecValidationError as exc:
+        console.print(f"[red]Could not load base spec from {base}: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    # Parse axes
+    parsed_axes: dict[str, list[Any]] = {}
+    for ax in axis:
+        try:
+            name, values = _parse_axis(ax)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        parsed_axes[name] = values
+
+    # Re-load raw YAML to preserve exact structure (comments aside)
+    import yaml as _yaml  # already a dep
+
+    with base.open("r", encoding="utf-8") as fh:
+        base_raw: dict[str, Any] = _yaml.safe_load(fh) or {}
+
+    # Strip any existing matrix block from the base and inject ours
+    base_raw.pop("matrix", None)
+    base_raw["matrix"] = parsed_axes
+
+    # Write output YAML
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as fh:
+        _yaml.dump(base_raw, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    # Validate round-trip
+    try:
+        generated_specs = load_experiment_specs_from_file(output)
+    except ExperimentSpecValidationError as exc:
+        console.print(f"[red]Generated matrix YAML is invalid: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    n = len(generated_specs)
+    console.print(
+        f"Wrote sweep YAML to [bold]{output}[/bold] ({n} spec(s) from "
+        f"{len(parsed_axes)} axis/axes over base '{base_spec.name}')."
+    )
+
+    if not execute:
+        return
+
+    # Execute
+    config = load_config()
+    result_store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    runner = ExperimentRunner(
+        result_store=result_store,
+        artifact_store=ArtifactStore(config.project.artifact_dir),
+    )
+
+    results = []
+    for spec in generated_specs:
+        console.print(f"  Running [cyan]{spec.name}[/cyan] …")
+        result = runner.run(spec)
+        results.append(result)
+
+    report = summarize_sweep(generated_specs, results)
+
+    table = Table(title="Sweep Results")
+    table.add_column("Spec")
+    table.add_column("Status")
+    for axis_name in sorted(report.axes.keys()):
+        table.add_column(axis_name)
+    table.add_column("Metrics")
+
+    for row in report.runs:
+        cells = [row["name"], row["status"]]
+        for axis_name in sorted(report.axes.keys()):
+            cells.append(str(row["axis_values"].get(axis_name, "")))
+        cells.append(
+            ", ".join(f"{k}={v}" for k, v in sorted(row["metrics"].items()))
+            or "-"
+        )
+        table.add_row(*cells)
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# mech sweep-report
+# ---------------------------------------------------------------------------
+
+
+@app.command("sweep-report")
+def sweep_report_command(
+    output_dir: Annotated[
+        Path,
+        typer.Option("--output-dir", "-o", help="Directory where report files are written."),
+    ] = Path("artifacts/reports"),
+    prefix: Annotated[
+        str,
+        typer.Option(
+            "--prefix",
+            "-p",
+            help="Only include run artifact dirs whose name starts with this prefix.",
+        ),
+    ] = "",
+) -> None:
+    """Walk recent run artifact dirs and write sweep_report.json + sweep_report.md.
+
+    Scans the artifact directory from config for run-XXXXXX subdirectories that
+    contain a spec.json with 'matrix_axes' in parameters.  Pairs them with their
+    result.json and produces a SweepReport.
+    """
+    config = load_config()
+    artifact_root = config.project.artifact_dir
+
+    from mech_interp.types import (  # noqa: PLC0415
+        ExperimentResult,
+        ExperimentSpec,
+        RunStatus,
+    )
+
+    specs: list[ExperimentSpec] = []
+    results: list[ExperimentResult] = []
+
+    run_dirs = sorted(artifact_root.glob("run-??????"))
+    for run_dir in run_dirs:
+        spec_path = run_dir / "spec.json"
+        result_path = run_dir / "result.json"
+        if not spec_path.exists():
+            continue
+
+        spec_data: dict[str, Any] = json.loads(spec_path.read_text(encoding="utf-8"))
+        params = spec_data.get("parameters") or {}
+        if "matrix_axes" not in params:
+            continue
+
+        spec_name: str = spec_data.get("name", run_dir.name)
+        if prefix and not spec_name.startswith(prefix):
+            continue
+
+        spec = ExperimentSpec(
+            name=spec_name,
+            family=spec_data.get("family", ""),
+            backend=spec_data.get("backend", ""),
+            description=spec_data.get("description", ""),
+            parameters=params,
+        )
+        specs.append(spec)
+
+        if result_path.exists():
+            result_data: dict[str, Any] = json.loads(result_path.read_text(encoding="utf-8"))
+            try:
+                status = RunStatus(result_data.get("status", "planned"))
+            except ValueError:
+                status = RunStatus.FAILED
+            result = ExperimentResult(
+                run_id=int(result_data.get("run_id", 0)),
+                status=status,
+                metrics=result_data.get("metrics") or {},
+                notes=result_data.get("notes") or "",
+            )
+            results.append(result)
+
+    if not specs:
+        console.print(
+            f"[yellow]No sweep run dirs found under {artifact_root}"
+            + (f" matching prefix '{prefix}'" if prefix else "")
+            + ".[/yellow]"
+        )
+        raise typer.Exit(code=0)
+
+    report = summarize_sweep(specs, results)
+    json_path, md_path = write_sweep_report(report, output_dir)
+    console.print(
+        f"Sweep report: {len(specs)} run(s), {len(report.axes)} axis/axes.\n"
+        f"  JSON: [bold]{json_path}[/bold]\n"
+        f"  MD:   [bold]{md_path}[/bold]"
+    )

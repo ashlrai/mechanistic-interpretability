@@ -10,6 +10,12 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from mech_interp.analysis.run_reports import write_aggregate_reports
+from mech_interp.cockpit_compare import (
+    build_env_diff_rows,
+    build_metric_rows,
+    build_param_diff_rows,
+)
+from mech_interp.cockpit_timeline import TIME_WINDOWS, build_timeline_svg
 from mech_interp.config.loader import AppConfig
 from mech_interp.experiments import load_experiment_specs
 from mech_interp.orchestration import ExperimentRunner, ExperimentRunQueue
@@ -235,6 +241,36 @@ def create_app(config: AppConfig, experiment_dir: str = "experiments") -> FastAP
             {"run": run, "features": features, "stats": stats, "has_labels": bool(feature_labels)},
         )
 
+    @app.get("/runs/{run_id}/crosscoder", response_class=HTMLResponse)
+    def crosscoder_features(request: Request, run_id: int) -> HTMLResponse:
+        db = store()
+        run = next((item for item in db.list_runs(limit=500) if item.id == run_id), None)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if run.family != "crosscoder":
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Run {run_id} is family '{run.family}', not 'crosscoder'; "
+                    "crosscoder feature browser is only available for crosscoder runs."
+                ),
+            )
+        result = db.get_result(run_id)
+        feature_analysis_path = _find_artifact_path(
+            "feature_analysis",
+            result,
+            config.project.artifact_dir / f"run-{run_id:06d}" / "feature_analysis.json",
+        )
+        raw = _read_json_artifact(
+            str(feature_analysis_path) if feature_analysis_path else None
+        )
+        features, stats = _parse_crosscoder_features(raw, result)
+        return templates.TemplateResponse(
+            request,
+            "crosscoder_features.html",
+            {"run": run, "features": features, "stats": stats},
+        )
+
     @app.get("/runs/{run_id}/circuit", response_class=HTMLResponse)
     def acdc_circuit(request: Request, run_id: int) -> HTMLResponse:
         db = store()
@@ -361,6 +397,81 @@ def create_app(config: AppConfig, experiment_dir: str = "experiments") -> FastAP
                 "artifacts": _artifact_browser_entries(
                     result.artifacts if result else {},
                     manifest,
+                    config.project.artifact_dir,
+                ),
+            },
+        )
+
+    @app.get("/timeline", response_class=HTMLResponse)
+    def timeline_page(
+        request: Request,
+        family: str | None = None,
+        status: str | None = None,
+        window: str = "all",
+    ) -> HTMLResponse:
+        runs = store().list_runs(limit=500)
+        if family:
+            runs = [r for r in runs if r.family == family]
+        if status:
+            runs = [r for r in runs if r.status.value == status]
+        svg, family_labels = build_timeline_svg(runs, window=window)
+        all_families = sorted({r.family for r in store().list_runs(limit=500)})
+        return templates.TemplateResponse(
+            request,
+            "timeline.html",
+            {
+                "svg": svg,
+                "family_labels": family_labels,
+                "all_families": all_families,
+                "selected_family": family or "",
+                "selected_status": status or "",
+                "selected_window": window,
+                "time_windows": TIME_WINDOWS,
+            },
+        )
+
+    @app.get("/runs/{id_a}/compare/{id_b}", response_class=HTMLResponse)
+    def compare_runs(request: Request, id_a: int, id_b: int) -> HTMLResponse:
+        db = store()
+        all_runs = db.list_runs(limit=500)
+        run_a = next((r for r in all_runs if r.id == id_a), None)
+        run_b = next((r for r in all_runs if r.id == id_b), None)
+        if run_a is None or run_b is None:
+            raise HTTPException(status_code=404, detail="One or both runs not found.")
+        if run_a.family != run_b.family:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Runs {id_a} (family='{run_a.family}') and {id_b} "
+                    f"(family='{run_b.family}') have different families. "
+                    "Comparison requires matching families."
+                ),
+            )
+        result_a = db.get_result(id_a)
+        result_b = db.get_result(id_b)
+        spec_a: dict[str, Any] = db.get_run_spec(id_a) or {}
+        spec_b: dict[str, Any] = db.get_run_spec(id_b) or {}
+        metrics_a: dict[str, float] = result_a.metrics if result_a else {}
+        metrics_b: dict[str, float] = result_b.metrics if result_b else {}
+        params_a: dict[str, Any] = spec_a.get("parameters", {}) if isinstance(spec_a, dict) else {}
+        params_b: dict[str, Any] = spec_b.get("parameters", {}) if isinstance(spec_b, dict) else {}
+        env_a = _read_environment(id_a, result_a, config.project.artifact_dir)
+        env_b = _read_environment(id_b, result_b, config.project.artifact_dir)
+        return templates.TemplateResponse(
+            request,
+            "compare_runs.html",
+            {
+                "run_a": run_a,
+                "run_b": run_b,
+                "metric_rows": build_metric_rows(metrics_a, metrics_b),
+                "param_rows": build_param_diff_rows(params_a, params_b),
+                "env_rows": build_env_diff_rows(env_a, env_b),
+                "artifact_links_a": _artifact_links(
+                    result_a.artifacts if result_a else {},
+                    config.project.artifact_dir,
+                ),
+                "artifact_links_b": _artifact_links(
+                    result_b.artifacts if result_b else {},
                     config.project.artifact_dir,
                 ),
             },
@@ -792,6 +903,89 @@ def _parse_acdc_circuit(
                 )
 
     return circuit, top_nodes, pruning_history
+
+
+def _parse_crosscoder_features(
+    raw: dict[str, Any] | None,
+    result: Any,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Parse crosscoder feature_analysis.json into feature list and summary stats."""
+    if raw is None:
+        return [], {
+            "total": 0, "live": 0, "dead": 0, "mean_per_token": 0.0,
+            "conserved": 0, "model_specific": 0, "threshold": 0.5,
+            "source_model": "", "target_model": "", "hook_site": "",
+        }
+
+    feature_list: list[Any] = []
+    if isinstance(raw.get("features"), list):
+        feature_list = raw["features"]
+
+    normalised: list[dict[str, Any]] = []
+    for item in feature_list:
+        if not isinstance(item, dict):
+            continue
+        normalised.append(
+            {
+                "feature_index": int(item.get("feature_index", 0)),
+                "max_activation": float(item.get("max_activation", 0.0)),
+                "mean_activation": float(item.get("mean_activation", 0.0)),
+                "dead": bool(item.get("dead", False)),
+                "coherence_score": (
+                    float(item["coherence_score"])
+                    if item.get("coherence_score") is not None
+                    else None
+                ),
+                "top_prompts": list(item.get("top_prompts") or []),
+                "decoder_norm_per_model": list(item.get("decoder_norm_per_model") or []),
+                "model_score": float(item.get("model_score", 0.0)),
+            }
+        )
+
+    normalised.sort(key=lambda f: abs(f["model_score"]), reverse=True)
+
+    total = len(normalised)
+    dead_count = sum(1 for f in normalised if f["dead"])
+    threshold = float(raw.get("model_specific_threshold", 0.5))
+    conserved = sum(
+        1 for f in normalised
+        if not f["dead"] and abs(f["model_score"]) <= threshold
+    )
+    model_specific = sum(
+        1 for f in normalised
+        if not f["dead"] and abs(f["model_score"]) > threshold
+    )
+
+    # Retrieve model names from run artifacts if available
+    source_model = ""
+    target_model = ""
+    hook_site = ""
+    if result is not None:
+        spec_path = result.artifacts.get("spec")
+        if spec_path:
+            try:
+                import json as _json
+                spec_data = _json.loads(Path(spec_path).read_text(encoding="utf-8"))
+                params = spec_data.get("parameters", {})
+                source_model = str(params.get("source_model", ""))
+                target_model = str(params.get("target_model", ""))
+                hook_site = str(params.get("hook_site", ""))
+            except (OSError, ValueError, KeyError):
+                pass
+
+    stats: dict[str, Any] = {
+        "total": total,
+        "live": total - dead_count,
+        "dead": dead_count,
+        "mean_per_token": float(raw.get("mean_features_per_token", 0.0)),
+        "conserved": conserved,
+        "model_specific": model_specific,
+        "threshold": threshold,
+        "source_model": source_model,
+        "target_model": target_model,
+        "hook_site": hook_site,
+    }
+    return normalised, stats
 
 
 def _load_feature_labels(labels_path: Path) -> dict[str, str]:

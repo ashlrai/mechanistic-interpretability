@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.filter-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:18px; }
+.filter-bar label { font-size:0.85rem; color:#66717a; margin-right:4px; }
+.filter-bar select { padding:5px 8px; border:1px solid #d8dee4; border-radius:5px; background:white; font-size:0.9rem; }
+.legend { display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-top:12px; font-size:0.85rem; }
+.legend-dot { display:inline-block; width:12px; height:12px; border-radius:50%; vertical-align:middle; margin-right:4px; }
+.timeline-wrap { background:white; border:1px solid #d8dee4; border-radius:8px; padding:16px; overflow-x:auto; }
+</style>
+
+<h1>Run Timeline</h1>
+
+<form method="get" action="/timeline" class="filter-bar">
+  <div>
+    <label for="sel-window">Window</label>
+    <select id="sel-window" name="window" onchange="this.form.submit()">
+      {% for tw in time_windows %}
+      <option value="{{ tw.value }}" {% if tw.value == selected_window %}selected{% endif %}>{{ tw.label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="sel-family">Family</label>
+    <select id="sel-family" name="family" onchange="this.form.submit()">
+      <option value="">All families</option>
+      {% for fam in all_families %}
+      <option value="{{ fam }}" {% if fam == selected_family %}selected{% endif %}>{{ fam }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="sel-status">Status</label>
+    <select id="sel-status" name="status" onchange="this.form.submit()">
+      <option value="">All statuses</option>
+      <option value="succeeded" {% if selected_status == "succeeded" %}selected{% endif %}>succeeded</option>
+      <option value="failed" {% if selected_status == "failed" %}selected{% endif %}>failed</option>
+      <option value="running" {% if selected_status == "running" %}selected{% endif %}>running</option>
+      <option value="planned" {% if selected_status == "planned" %}selected{% endif %}>planned</option>
+    </select>
+  </div>
+</form>
+
+<div class="timeline-wrap">
+  {{ svg | safe }}
+</div>
+
+<div class="legend">
+  <span><span class="legend-dot" style="background:#22c55e"></span>succeeded</span>
+  <span><span class="legend-dot" style="background:#ef4444"></span>failed</span>
+  <span><span class="legend-dot" style="background:#3b82f6"></span>running</span>
+  <span><span class="legend-dot" style="background:#94a3b8"></span>planned / other</span>
+</div>
+
+{% if family_labels %}
+<section>
+  <h2>Swimlanes</h2>
+  <ul class="muted">
+    {% for fam in family_labels %}<li>{{ fam }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}
