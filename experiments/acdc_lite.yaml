@@ -1,0 +1,29 @@
+name: acdc-lite-gpt2-factual
+family: acdc_lite
+backend: transformerlens
+description: >-
+  Node-level automatic circuit discovery on gpt2-small for the
+  capital-of-France factual recall task. Scores every (layer, head) attention
+  node and every (layer, MLP) node by mean-ablation KL impact, then prunes
+  below tau. Output: ranked nodes + GraphViz dot file.
+parameters:
+  model: gpt2-small
+  prompt_pairs:
+    - id: capital-france
+      clean_prompt: "The capital of France is Paris"
+      corrupted_prompt: "The capital of France is Rome"
+      correct_token: " Paris"
+      incorrect_token: " Rome"
+    - id: capital-italy
+      clean_prompt: "The capital of Italy is Rome"
+      corrupted_prompt: "The capital of Italy is Paris"
+      correct_token: " Rome"
+      incorrect_token: " Paris"
+  layers: [0, 1, 2, 3]
+  include_attention: true
+  include_mlps: true
+  tau: 0.05
+  max_iterations: 10
+  ablation_type: mean
+  seed: 42
+  device: cpu
