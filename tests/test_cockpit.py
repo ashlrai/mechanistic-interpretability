@@ -157,6 +157,34 @@ def test_cockpit_artifact_browser_shows_preview_and_metadata(tmp_path: Path) -> 
     assert "ok" in response.text
 
 
+def test_cockpit_sae_features_404s_for_wrong_family(tmp_path: Path) -> None:
+    """Visiting /runs/<id>/features on a non-SAE run must 404 with a clear message,
+    not silently render an empty feature browser.
+    """
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(name="cp_run", family="circuit_patching", backend="transformerlens")
+    )
+    client = TestClient(create_app(config))
+    response = client.get(f"/runs/{run.id}/features")
+    assert response.status_code == 404
+    assert "polysemanticity_sae" in response.text
+
+
+def test_cockpit_acdc_circuit_404s_for_wrong_family(tmp_path: Path) -> None:
+    """Visiting /runs/<id>/circuit on a non-ACDC run must 404."""
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(name="sae_run", family="polysemanticity_sae", backend="transformerlens")
+    )
+    client = TestClient(create_app(config))
+    response = client.get(f"/runs/{run.id}/circuit")
+    assert response.status_code == 404
+    assert "acdc" in response.text.lower()
+
+
 def test_cockpit_sae_features_renders_live_dead_stats(tmp_path: Path) -> None:
     config = _config(tmp_path)
     store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)

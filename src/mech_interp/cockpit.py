@@ -203,6 +203,14 @@ def create_app(config: AppConfig, experiment_dir: str = "experiments") -> FastAP
         run = next((item for item in db.list_runs(limit=500) if item.id == run_id), None)
         if run is None:
             raise HTTPException(status_code=404, detail="Run not found.")
+        if run.family != "polysemanticity_sae":
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Run {run_id} is family '{run.family}', not 'polysemanticity_sae'; "
+                    "SAE feature browser is only available for SAE runs."
+                ),
+            )
         result = db.get_result(run_id)
         feature_analysis_path = _find_artifact_path(
             "feature_analysis",
@@ -225,6 +233,14 @@ def create_app(config: AppConfig, experiment_dir: str = "experiments") -> FastAP
         run = next((item for item in db.list_runs(limit=500) if item.id == run_id), None)
         if run is None:
             raise HTTPException(status_code=404, detail="Run not found.")
+        if run.family not in {"acdc_lite", "acdc_edge"}:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Run {run_id} is family '{run.family}', not an ACDC family; "
+                    "circuit view is only available for acdc_lite / acdc_edge runs."
+                ),
+            )
         result = db.get_result(run_id)
         run_dir = config.project.artifact_dir / f"run-{run_id:06d}"
         circuit_json_path = _find_artifact_path("circuit", result, run_dir / "circuit.json")
