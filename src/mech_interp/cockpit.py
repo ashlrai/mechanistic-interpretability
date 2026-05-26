@@ -221,10 +221,18 @@ def create_app(config: AppConfig, experiment_dir: str = "experiments") -> FastAP
             str(feature_analysis_path) if feature_analysis_path else None
         )
         features, stats = _parse_sae_features(raw)
+        # Load optional feature labels (written by `mech label-features`).
+        feature_labels_path = (
+            config.project.artifact_dir / f"run-{run_id:06d}" / "feature_labels.json"
+        )
+        feature_labels = _load_feature_labels(feature_labels_path)
+        # Attach labels to each feature dict.
+        for feat in features:
+            feat["label"] = feature_labels.get(str(feat["feature_index"]))
         return templates.TemplateResponse(
             request,
             "sae_features.html",
-            {"run": run, "features": features, "stats": stats},
+            {"run": run, "features": features, "stats": stats, "has_labels": bool(feature_labels)},
         )
 
     @app.get("/runs/{run_id}/circuit", response_class=HTMLResponse)
@@ -784,3 +792,20 @@ def _parse_acdc_circuit(
                 )
 
     return circuit, top_nodes, pruning_history
+
+
+def _load_feature_labels(labels_path: Path) -> dict[str, str]:
+    """Load feature_labels.json, returning {str(feature_index): label}.
+
+    Returns an empty dict if the file does not exist or is malformed.
+    """
+    try:
+        payload = json.loads(labels_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    raw_labels = payload.get("feature_labels", {})
+    if not isinstance(raw_labels, dict):
+        return {}
+    return {str(k): str(v) for k, v in raw_labels.items()}

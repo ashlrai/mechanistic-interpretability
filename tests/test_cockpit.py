@@ -467,3 +467,87 @@ def _config(tmp_path: Path) -> AppConfig:
             database_path=tmp_path / "runs.sqlite3",
         )
     )
+
+
+def test_cockpit_sae_features_shows_label_column_when_labels_present(tmp_path: Path) -> None:
+    """When feature_labels.json exists for a SAE run, the features page shows a Label column."""
+    import json
+
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(name="sae_run", family="polysemanticity_sae", backend="transformerlens")
+    )
+    artifact_store = ArtifactStore(config.project.artifact_dir)
+    feature_data = {
+        "mean_features_per_token": 1.5,
+        "features": [
+            {
+                "feature_index": 0,
+                "max_activation": 4.2,
+                "mean_activation": 2.1,
+                "dead": False,
+                "coherence_score": 0.87,
+                "top_prompts": [{"rank": 1, "activation": 4.2, "prompt": "the cat sat"}],
+            },
+        ],
+    }
+    feat_artifact = artifact_store.write_json(run.id, "feature_analysis.json", feature_data)
+    # Write feature_labels.json next to feature_analysis.json.
+    labels_data = {"feature_labels": {"0": "feline / cat / animal"}}
+    run_dir = config.project.artifact_dir / f"run-{run.id:06d}"
+    (run_dir / "feature_labels.json").write_text(
+        json.dumps(labels_data), encoding="utf-8"
+    )
+    store.save_result(
+        ExperimentResult(
+            run_id=run.id,
+            status=RunStatus.SUCCEEDED,
+            artifacts={"feature_analysis": str(feat_artifact.path)},
+        )
+    )
+    client = TestClient(create_app(config, experiment_dir=str(tmp_path / "experiments")))
+
+    response = client.get(f"/runs/{run.id}/features")
+
+    assert response.status_code == 200
+    assert "Label" in response.text  # column header present
+    assert "feline / cat / animal" in response.text  # label value present
+
+
+def test_cockpit_sae_features_no_label_column_without_labels_file(tmp_path: Path) -> None:
+    """When feature_labels.json is absent, the Label column is not rendered."""
+    config = _config(tmp_path)
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    run = store.create_run(
+        ExperimentSpec(name="sae_run", family="polysemanticity_sae", backend="transformerlens")
+    )
+    artifact_store = ArtifactStore(config.project.artifact_dir)
+    feature_data = {
+        "mean_features_per_token": 1.0,
+        "features": [
+            {
+                "feature_index": 0,
+                "max_activation": 2.0,
+                "mean_activation": 1.0,
+                "dead": False,
+                "coherence_score": 0.5,
+                "top_prompts": [{"rank": 1, "activation": 2.0, "prompt": "some text"}],
+            },
+        ],
+    }
+    feat_artifact = artifact_store.write_json(run.id, "feature_analysis.json", feature_data)
+    store.save_result(
+        ExperimentResult(
+            run_id=run.id,
+            status=RunStatus.SUCCEEDED,
+            artifacts={"feature_analysis": str(feat_artifact.path)},
+        )
+    )
+    client = TestClient(create_app(config, experiment_dir=str(tmp_path / "experiments")))
+
+    response = client.get(f"/runs/{run.id}/features")
+
+    assert response.status_code == 200
+    # No label column header when no feature_labels.json
+    assert "<th>Label</th>" not in response.text

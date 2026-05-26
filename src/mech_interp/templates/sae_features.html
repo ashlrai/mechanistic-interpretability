@@ -37,6 +37,7 @@
         <th>Mean act.</th>
         <th>Dead</th>
         <th>Coherence</th>
+        {% if has_labels %}<th>Label</th>{% endif %}
         <th>Top prompt (first)</th>
       </tr>
     </thead>
@@ -54,12 +55,13 @@
         <td>{{ "%.4f"|format(f.mean_activation) }}</td>
         <td>{% if f.dead %}<span style="color:#b5400a">dead</span>{% else %}&mdash;{% endif %}</td>
         <td>{{ "%.3f"|format(f.coherence_score) if f.coherence_score is not none else "&mdash;"|safe }}</td>
+        {% if has_labels %}<td class="muted">{{ f.label if f.label else "&mdash;"|safe }}</td>{% endif %}
         <td class="muted" style="max-width:340px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
           {{ f.top_prompts[0] if f.top_prompts else "" }}
         </td>
       </tr>
       <tr class="detail-row" style="display:none">
-        <td colspan="6">
+        <td colspan="{{ 7 if has_labels else 6 }}">
           <div style="padding:8px 0">
             {% if f.top_prompts %}
             <strong>Top prompts:</strong>

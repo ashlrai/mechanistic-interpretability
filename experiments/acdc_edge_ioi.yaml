@@ -1,0 +1,46 @@
+name: acdc-edge-ioi-gpt2
+family: acdc_edge
+backend: transformerlens
+description: >-
+  Edge-level ACDC on GPT-2 small for the canonical Indirect Object Identification
+  (IOI) task (Wang et al., 2022). Uses standard IOI prompt pairs where the model
+  must predict the indirect object (e.g. " Mary") rather than the subject (" John").
+  Layers 7-11 cover the IOI circuit heads identified in the paper.
+  Outputs: ranked edges + faithfulness metric for validation against canonical heads.
+parameters:
+  model: gpt2-small
+  prompt_pairs:
+    - id: ioi-john-mary-store
+      clean_prompt: "Then John and Mary went to the store. John gave a bottle of milk to"
+      corrupted_prompt: "Then John and Mary went to the store. Mary gave a bottle of milk to"
+      correct_token: " Mary"
+      incorrect_token: " John"
+    - id: ioi-tom-alice-park
+      clean_prompt: "Then Tom and Alice went to the park. Tom gave a flower to"
+      corrupted_prompt: "Then Tom and Alice went to the park. Alice gave a flower to"
+      correct_token: " Alice"
+      incorrect_token: " Tom"
+    - id: ioi-james-sarah-office
+      clean_prompt: "Then James and Sarah went to the office. James gave a report to"
+      corrupted_prompt: "Then James and Sarah went to the office. Sarah gave a report to"
+      correct_token: " Sarah"
+      incorrect_token: " James"
+    - id: ioi-peter-emma-library
+      clean_prompt: "Then Peter and Emma went to the library. Peter gave a book to"
+      corrupted_prompt: "Then Peter and Emma went to the library. Emma gave a book to"
+      correct_token: " Emma"
+      incorrect_token: " Peter"
+    - id: ioi-david-lisa-restaurant
+      clean_prompt: "Then David and Lisa went to the restaurant. David gave a menu to"
+      corrupted_prompt: "Then David and Lisa went to the restaurant. Lisa gave a menu to"
+      correct_token: " Lisa"
+      incorrect_token: " David"
+  layers: [7, 8, 9, 10, 11]
+  include_attention: true
+  include_mlps: false
+  max_edges: 300
+  tau: 0.01
+  max_iterations: 8
+  ablation_type: mean
+  seed: 42
+  device: cpu
