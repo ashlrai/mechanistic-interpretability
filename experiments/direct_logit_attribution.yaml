@@ -18,15 +18,15 @@ parameters:
       clean_prompt: "The capital of France is"
       correct_token: " Paris"
       incorrect_token: " London"
-    - id: author-hamlet
-      clean_prompt: "The play Hamlet was written by"
-      correct_token: " Shakespeare"
-      incorrect_token: " Marlowe"
-    - id: planet-largest
-      clean_prompt: "The largest planet in the Solar System is"
-      correct_token: " Jupiter"
-      incorrect_token: " Saturn"
-    - id: currency-japan
-      clean_prompt: "The official currency of Japan is the"
-      correct_token: " yen"
-      incorrect_token: " dollar"
+    - id: capital-italy
+      clean_prompt: "The capital of Italy is"
+      correct_token: " Rome"
+      incorrect_token: " Paris"
+    - id: capital-germany
+      clean_prompt: "The capital of Germany is"
+      correct_token: " Berlin"
+      incorrect_token: " Paris"
+    - id: tower-city
+      clean_prompt: "The Eiffel Tower is in"
+      correct_token: " Paris"
+      incorrect_token: " Rome"
