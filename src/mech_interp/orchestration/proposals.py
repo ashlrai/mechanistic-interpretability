@@ -9,6 +9,7 @@ import yaml
 
 from mech_interp.config import load_config
 from mech_interp.experiments.registry import load_experiment_spec
+from mech_interp.orchestration.proposal_generators import PROPOSAL_GENERATORS
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,65 @@ class ProposalResult:
     output_dir: Path
     manifest_path: Path
     spec_paths: list[Path]
+
+
+def propose_from_run(
+    family: str,
+    artifact_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    limit: int = 5,
+) -> ProposalResult:
+    """Per-run follow-up generator for the agentic loop.
+
+    Routes to the appropriate ``ProposalGenerator`` from ``PROPOSAL_GENERATORS``;
+    raises ``ValueError`` if the family has no generator. Each emitted spec is
+    YAML-written next to a manifest, then validated through the registry so
+    malformed proposals fail loudly before they're queued.
+    """
+    if family not in PROPOSAL_GENERATORS:
+        supported = ", ".join(sorted(PROPOSAL_GENERATORS))
+        raise ValueError(
+            f"No per-run proposal generator for family '{family}'. Supported: {supported}."
+        )
+    generator = PROPOSAL_GENERATORS[family]
+    artifact_dir = Path(artifact_dir)
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+
+    specs = generator.generate(artifact_dir, limit=limit)
+    proposals: list[dict[str, Any]] = []
+    for spec in specs:
+        spec_path = output / f"{spec['name']}.yaml"
+        spec_path.write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
+        load_experiment_spec(spec_path)
+        proposals.append(
+            {
+                "path": str(spec_path),
+                "name": spec["name"],
+                "source_artifact_dir": str(artifact_dir),
+                "rationale": spec.get("description", ""),
+                "validated": True,
+            }
+        )
+
+    manifest = {
+        "family": family,
+        "source_artifact_dir": str(artifact_dir),
+        "proposal_count": len(proposals),
+        "proposals": proposals,
+        "guardrail": "Generated specs are not executed automatically.",
+    }
+    manifest_path = output / "proposal_manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return ProposalResult(
+        output_dir=output,
+        manifest_path=manifest_path,
+        spec_paths=[Path(item["path"]) for item in proposals if item.get("path")],
+    )
 
 
 def propose_followups(
@@ -26,7 +86,10 @@ def propose_followups(
     reports_dir: str | Path | None = None,
 ) -> ProposalResult:
     if family != "circuit_patching":
-        raise ValueError("Only circuit_patching follow-up proposals are supported in V1.")
+        raise ValueError(
+            f"Aggregate-report follow-ups are only supported for circuit_patching; "
+            f"for '{family}' use propose_from_run(...) against the run artifact dir."
+        )
     config = load_config()
     report_dir = (
         Path(reports_dir) if reports_dir is not None else config.project.artifact_dir / "reports"

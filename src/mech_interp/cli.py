@@ -28,7 +28,7 @@ from mech_interp.orchestration.preflight import (
     preflight_spec,
     validate_answer_tokens,
 )
-from mech_interp.orchestration.proposals import propose_followups
+from mech_interp.orchestration.proposals import propose_followups, propose_from_run
 from mech_interp.providers import configured_providers
 from mech_interp.storage import ArtifactStore, SQLiteResultStore
 
@@ -466,6 +466,34 @@ def propose_followup_specs(
 ) -> None:
     """Generate deterministic follow-up specs from aggregate reports."""
     result = propose_followups(family, output, limit=limit)
+    console.print(
+        f"Wrote {len(result.spec_paths)} proposed spec(s) and manifest {result.manifest_path}."
+    )
+
+
+@app.command("propose-from-run")
+def propose_from_run_command(
+    family: str = typer.Option(
+        ...,
+        help="Family of the source run (polysemanticity_sae, acdc_lite).",
+    ),
+    artifact_dir: Annotated[
+        Path,
+        typer.Option("--artifact-dir", "-a", help="Run artifact directory to read."),
+    ] = Path("."),
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Directory for proposed YAML specs."),
+    ] = DEFAULT_PROPOSAL_OUTPUT,
+    limit: int = typer.Option(5, min=1),
+) -> None:
+    """Generate per-run follow-up specs from a single run's artifacts.
+
+    Closes the agentic loop: a SAE run becomes circuit_patching probes for its
+    top features; an ACDC-lite run becomes activation captures over its
+    surviving nodes.
+    """
+    result = propose_from_run(family, artifact_dir, output, limit=limit)
     console.print(
         f"Wrote {len(result.spec_paths)} proposed spec(s) and manifest {result.manifest_path}."
     )

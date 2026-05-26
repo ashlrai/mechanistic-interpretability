@@ -194,23 +194,42 @@ bash scripts/smoke.sh
 
 ## Current Execution Flow
 
-The current runner is intentionally lightweight. It validates and persists experiment specs, creates
-SQLite run records, writes per-run artifacts, and records placeholder metrics. That gives the
-project a stable execution spine before model-backed TransformerLens experiments are enabled.
+The runner validates and persists experiment specs, seeds torch/numpy/random deterministically,
+writes an `environment.json` fingerprint (library versions, `uv.lock` SHA, seed, model name) per
+run, dispatches to the registered family, and persists artifacts + results into SQLite.
 
 ```text
-YAML spec -> registry -> runner -> SQLite run -> per-run artifacts -> SQLite result
+YAML spec -> registry -> runner -> seed + env fingerprint -> family -> SQLite run + artifacts
 ```
 
-Specs can opt into the TransformerLens smoke runner by setting `parameters.runner` to
-`transformerlens_smoke`. That path captures selected activation sites when the optional
-TransformerLens dependencies are installed, and ordinary tests use fakes so CI never downloads
-models.
+If a YAML targets a family with no registered implementation, the runner now raises
+`FamilyNotImplementedError` rather than silently falling back to a placeholder runner. To opt back
+into the placeholder for scratch runs, set `MECH_INTERP_ALLOW_PLACEHOLDER=1` in the environment.
 
-Specs can opt into real activation summary capture by setting `parameters.runner` to
-`activation_capture`. The runner calls the configured instrumented backend, captures requested hook
-sites, and writes `activation_summary.json` with shape, dtype, mean, std, max, and sparsity where
-those summaries are available.
+### Real experiment families
+
+- **circuit_patching** — clean/corrupted prompt-pair patching with recovery fractions and control
+  hook sites. Verified on gpt2-small (`experiments/circuit_patching.yaml`).
+- **polysemanticity_sae** — Top-K sparse autoencoder (Gao et al., 2024) on residual-stream
+  activations. Trains a feature dictionary, ranks top-activating prompts per feature, writes
+  `sae_weights.safetensors` + `feature_analysis.json` (`experiments/polysemanticity.yaml`).
+- **acdc_lite** — node-level automatic circuit discovery (Conmy et al., 2023). Scores every
+  (layer, head) attention node and (layer, MLP) node by ablation impact, prunes below a threshold,
+  reports faithfulness and a GraphViz dot (`experiments/acdc_lite.yaml`).
+- **cross_model_representation_probe** — ridge regression across model pairs.
+- **activation_capture** / **transformerlens_smoke** runners (via `parameters.runner`).
+
+### Agentic proposal loop
+
+After a run completes, family-specific `ProposalGenerator`s emit follow-up specs:
+
+- SAE run → `mech propose-from-run --family polysemanticity_sae --artifact-dir <run>` generates
+  `circuit_patching` probes that test the top features for causal weight.
+- ACDC run → `mech propose-from-run --family acdc_lite --artifact-dir <run>` generates an
+  `activation_capture` spec across surviving nodes.
+
+Every generated spec is round-tripped through the YAML validator before being written to disk, so
+malformed proposals fail immediately rather than at queue time.
 
 ## Prompt Datasets
 
