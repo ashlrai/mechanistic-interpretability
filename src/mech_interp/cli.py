@@ -1180,6 +1180,41 @@ def label_features(
         console.print(table)
 
 
+@app.command("sae-scale-report")
+def sae_scale_report_command(
+    run_id: Annotated[
+        int | None,
+        typer.Option("--run-id", min=1, help="SAE run ID to report on."),
+    ] = None,
+) -> None:
+    """Print a one-shot scale summary for a polysemanticity_sae run as JSON.
+
+    Reads training_history.json, feature_analysis.json, and
+    sae_weights.safetensors.json from the run artifact directory.
+    Defaults to the most recent polysemanticity_sae run.
+    """
+    from mech_interp.analysis.sae_scale_report import generate_scale_report
+
+    config = load_config()
+    store = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+
+    if run_id is None:
+        runs = [r for r in store.list_runs(limit=50) if r.family == "polysemanticity_sae"]
+        if not runs:
+            console.print("[red]No polysemanticity_sae runs found. Use --run-id N.[/red]")
+            raise typer.Exit(code=1)
+        run_id = runs[0].id
+        console.print(f"No --run-id given; using most recent SAE run: {run_id}")
+
+    try:
+        report = generate_scale_report(run_id, store)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print_json(json.dumps(report, indent=2))
+
+
 @app.command("compare-runs")
 def compare_runs_cli(
     left: Annotated[int, typer.Option("--left", min=1, help="Run ID for the A side.")],

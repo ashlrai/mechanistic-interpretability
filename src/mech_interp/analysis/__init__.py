@@ -16,6 +16,7 @@ from mech_interp.analysis.feature_splitting import (
 )
 from mech_interp.analysis.ioi_validation import CANONICAL_IOI_HEADS, compare_to_canonical_ioi
 from mech_interp.analysis.run_reports import AggregateReportArtifacts, summarize_recent_runs
+from mech_interp.analysis.sae_scale_report import generate_scale_report
 from mech_interp.analysis.sweep_reports import SweepReport, summarize_sweep, write_sweep_report
 
 __all__ = [
@@ -34,6 +35,7 @@ __all__ = [
     "compare_to_canonical_ioi",
     "compute_feature_split_analysis",
     "compute_feature_splits",
+    "generate_scale_report",
     "label_run_features",
     "logit_diff_recovery",
     "summarize_recent_runs",
