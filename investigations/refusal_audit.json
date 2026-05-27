@@ -1,0 +1,31 @@
+{
+  "baseline_refusal_rate": 0.3333333333333333,
+  "best_coefficient": -3.0,
+  "best_steering_layer": 8,
+  "caa_run_id": 71,
+  "circuit_faithfulness": 0.04087934041033353,
+  "circuit_run_id": 72,
+  "extraction_quality": 4.105256431454133,
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "notes": "Refusal direction extracted. Extraction quality (projection margin): 4.105. Baseline refusal rate: 0.33. Max refusal-rate shift under steering: 0.33. | CAA steering sweep complete over 4 layers. Most effective layer: 8 (best shift=0.33, best coeff=-3.0, extraction quality=3.099). | Circuit patching completed. Top site blocks.11.hook_resid_post on pair-harm-1 recovered 1.037 of the clean-corrupted logit diff. No configured controls. | Causal scrubbing completed. Faithfulness=0.0409 (mean KL=3.1971). Protected sites: 2. Scrubbed sites: 52.",
+  "refusal_rate_shift_at_best": 0.3333333333333333,
+  "refusal_run_id": 70,
+  "scrub_run_id": 73,
+  "top_causal_heads": [
+    [
+      11,
+      -1,
+      1.03673502714537
+    ],
+    [
+      10,
+      -1,
+      0.8311340716947762
+    ],
+    [
+      9,
+      -1,
+      0.061985538068906845
+    ]
+  ]
+}
