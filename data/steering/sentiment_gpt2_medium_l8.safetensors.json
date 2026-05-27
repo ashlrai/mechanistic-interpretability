@@ -1,0 +1,13 @@
+{
+  "description": "Sentiment direction: positive minus negative movie-review prompts. Positive coefficients steer toward positive sentiment.",
+  "direction_norm": 15.358766555786133,
+  "extraction_quality": 1.6758009588114002,
+  "hidden_dim": 1024,
+  "hook_site": "blocks.8.hook_resid_pre",
+  "license": "research-only",
+  "model": "gpt2-medium",
+  "name": "sentiment-gpt2-medium-l8",
+  "negative_prompt_count": 10,
+  "positive_prompt_count": 10,
+  "source_paper": "Zou et al. 2023"
+}

@@ -70,6 +70,68 @@ DEFAULT_REPORT_OUTPUT = Path("artifacts/reports")
 DEFAULT_PROPOSAL_OUTPUT = Path("experiments/proposed")
 
 
+_HELP_GROUPS: dict[str, list[str]] = {
+    "Setup": ["init-store", "providers", "config", "download-corpus"],
+    "Run experiments": [
+        "validate",
+        "experiments",
+        "run",
+        "runs",
+        "query-runs",
+        "inspect-run",
+        "export-run",
+        "sweep",
+        "sweep-report",
+        "preflight",
+        "estimate-activations",
+    ],
+    "Closed-loop / proposals": [
+        "propose-followups",
+        "propose-from-run",
+        "iterate-from-run",
+        "iterate",
+        "archive-runs",
+        "summarize-runs",
+        "report-runs",
+    ],
+    "Pretrained artifacts": [
+        "list-saes",
+        "download-sae",
+        "analyze-sae",
+        "analyze-sae-stability",
+        "analyze-feature-splits",
+        "list-steering",
+        "apply-steering",
+        "list-hf-architectures",
+    ],
+    "Audit": [
+        "audit-refusal",
+        "label-features",
+        "sae-scale-report",
+        "calibrate-tuned-lens",
+        "compare-runs",
+    ],
+    "UI / demo": ["demo", "cockpit", "gradio"],
+}
+
+
+@app.command("help")
+def grouped_help() -> None:
+    """Show commands grouped by category."""
+    from rich.panel import Panel
+
+    for group, commands in _HELP_GROUPS.items():
+        console.print(Panel(
+            "  ".join(f"[bold cyan]{c}[/bold cyan]" for c in commands),
+            title=f"[bold]{group}[/bold]",
+            border_style="dim",
+            expand=False,
+        ))
+    console.print(
+        "[dim]Run [bold]mech <command> --help[/bold] for details on any command.[/dim]"
+    )
+
+
 @app.command("config")
 def show_config() -> None:
     """Print the resolved application config."""

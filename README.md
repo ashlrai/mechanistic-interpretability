@@ -1,16 +1,37 @@
-**[Read the docs at ashlrai.github.io/mechanistic-interpretability](https://ashlrai.github.io/mechanistic-interpretability)** — investigations, publication artifacts, and reference.
+# Mechanistic Interpretability Platform
+
+**[Documentation](https://ashlrai.github.io/mechanistic-interpretability)** | **[Investigations](docs/investigations/)** | **[Publications](docs/publications/)**
+
+Local mech-interp research at the speed of curiosity. 15 experiment families,
+SQLite-backed run history, closed-loop agentic followup, Gradio UI, HuggingFace
+backend for any AutoModelForCausalLM, and a 19-second quickstart.
+
+## Quickstart
+
+```bash
+uv sync --group dev --extra interp
+mech demo
+```
+
+## What it lets you do
+
+- **Reproduce canonical circuits**: `mech run --name acdc-edge-ioi-gpt2-small` runs
+  edge-level ACDC on 30 IOI prompts and recovers the Wang et al. name-mover heads.
+- **Audit refusal across models**: `mech audit-refusal` runs the full 4-stage
+  pipeline (direction extraction → circuit patching → causal scrubbing → ablation)
+  on any instruct model.
+- **Load pretrained SAEs**: `mech list-saes` then `mech download-sae` pulls
+  HuggingFace-hosted sparse autoencoders ready for feature analysis.
+- **Apply steering vectors**: `mech list-steering` + `mech apply-steering --vector <name>`
+  runs baseline-vs-steered generation side-by-side.
+- **Use any HF model**: `backend: huggingface` in any YAML loads any
+  `AutoModelForCausalLM` with the same hook-site API as TransformerLens.
+- **Explore results**: `mech cockpit` serves a local FastAPI/HTMX dashboard;
+  `mech gradio` launches an interactive 4-panel Gradio demo.
+
+Discover all 37 commands: `mech help`
 
 ---
-
-# Local Mechanistic Interpretability Platform
-
-This project is a local, modular research platform for running large batches of controlled
-mechanistic interpretability experiments on local language models. The goal is to discover how
-models compute by targeting polysemanticity, superposition, activation-level interventions, and
-circuit-level behavior.
-
-The platform is designed for an Apple Silicon MacBook Pro with 128 GB RAM. It uses local model
-execution, local storage, and local orchestration. No cloud model APIs are part of the core design.
 
 ## Research Vision
 

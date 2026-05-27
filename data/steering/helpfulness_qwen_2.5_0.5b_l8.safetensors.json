@@ -1,0 +1,13 @@
+{
+  "description": "Helpfulness direction: helpful minus evasive response prompts. Positive coefficients steer toward more helpful completions.",
+  "direction_norm": 5.543761730194092,
+  "evasive_prompt_count": 8,
+  "extraction_quality": 4.2544270172930965,
+  "helpful_prompt_count": 8,
+  "hidden_dim": 896,
+  "hook_site": "blocks.8.hook_resid_post",
+  "license": "research-only",
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "name": "helpfulness-qwen-2.5-0.5b-l8",
+  "source_paper": "Arditi et al. 2024"
+}

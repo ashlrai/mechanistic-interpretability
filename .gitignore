@@ -14,6 +14,8 @@ build/
 data/*
 !data/prompts/
 !data/prompts/**
+!data/steering/
+!data/steering/**
 # Large downloaded corpora — don't bloat the repo
 data/prompts/pile-1k.jsonl
 data/prompts/owt-1k.jsonl

@@ -1,0 +1,14 @@
+{
+  "name": "refusal-qwen-2.5-1.5b-l10",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "hook_site": "blocks.10.hook_resid_post",
+  "hidden_dim": 1536,
+  "direction_norm": 11.73276138305664,
+  "extraction_quality": 4.105256431454133,
+  "harmful_prompt_count": 5,
+  "harmless_prompt_count": 5,
+  "license": "research-only",
+  "source_run_id": 70,
+  "source_paper": "Arditi et al. 2024",
+  "description": "Refusal direction extracted from Qwen2.5-1.5B-Instruct via Arditi/RepE mean-difference. From investigation #1 (run 70)."
+}

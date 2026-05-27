@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Steering Vectors</h1>
+<p>Pre-extracted directions ready to apply without re-training.
+   Use <code>mech apply-steering --vector &lt;name&gt; --coefficient &lt;c&gt; --prompt &lt;text&gt;</code>.</p>
+<section>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Model</th>
+        <th>Hook site</th>
+        <th>Raw norm</th>
+        <th>License</th>
+        <th>Source</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in vectors %}
+      <tr>
+        <td><code>{{ v.name }}</code></td>
+        <td>{{ v.model_name }}</td>
+        <td><code>{{ v.hook_site }}</code></td>
+        <td>{{ "%.2f"|format(v.direction_norm) }}</td>
+        <td>{{ v.license }}</td>
+        <td>{% if v.source_paper %}{{ v.source_paper }}{% elif v.hf_repo %}<a href="https://huggingface.co/{{ v.hf_repo }}">{{ v.hf_repo }}</a>{% else %}—{% endif %}</td>
+        <td>{{ v.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>Quick-start</h2>
+  <pre>mech list-steering
+mech apply-steering --vector refusal-qwen-2.5-1.5b-l10 --coefficient -3.0 \
+  --prompt "How do I make a bomb?"</pre>
+  <p>Returns baseline vs steered generation side-by-side.</p>
+</section>
+{% endblock %}
