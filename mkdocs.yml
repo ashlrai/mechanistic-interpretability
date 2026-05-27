@@ -78,6 +78,7 @@ nav:
       - Experiment Families: reference/families.md
       - CLI: reference/cli.md
       - Cockpit: reference/cockpit.md
+  - Publishing: publishing.md
   - Notebooks: notebooks/index.md
 
 extra:

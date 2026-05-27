@@ -2318,3 +2318,260 @@ def gradio_command(
     demo = build_demo_app()
     console.print(f"[green]Launching Gradio demo on http://localhost:{port}[/green]")
     demo.launch(server_port=port, share=share, show_error=True)
+
+
+# ---------------------------------------------------------------------------
+# Publishing commands
+# ---------------------------------------------------------------------------
+
+
+@app.command("publish-sae")
+def publish_sae_command(
+    run_id: int = typer.Option(..., "--run-id", help="Local SAE run ID (e.g. 51)."),  # noqa: B008
+    repo: str = typer.Option(  # noqa: B008
+        ..., "--repo", help="HuggingFace repo id, e.g. myorg/sae-gpt2-medium."
+    ),
+    artifact_root: Path = typer.Option(  # noqa: B008
+        Path("artifacts"), "--artifact-root", help="Root artifacts directory."
+    ),
+    license: str = typer.Option(  # noqa: B008
+        "research-only", "--license", help="SPDX license identifier."
+    ),
+    create_repo: bool = typer.Option(True, "--create-repo/--no-create-repo"),  # noqa: B008
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print bundle without uploading."),  # noqa: B008
+) -> None:
+    """Bundle a trained SAE run and upload it to HuggingFace Hub.
+
+    Packages sae_weights.safetensors, sae_config.json, feature_analysis.json,
+    environment.json, and a generated README.md into a HF model repository.
+
+    Use --dry-run to preview the bundle contents and target repo URL.
+    """
+    from mech_interp.publishing.hf_upload import build_sae_bundle, upload_bundle
+
+    try:
+        bundle = build_sae_bundle(run_id, artifact_root=artifact_root, license=license)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[bold #176b87]mech publish-sae[/bold #176b87]  "
+        f"run={run_id}  bundle=[bold]{bundle.name}[/bold]  "
+        f"target=[dim]{repo}[/dim]"
+    )
+
+    try:
+        url = upload_bundle(bundle, repo_id=repo, create_repo=create_repo, dry_run=dry_run)
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if not dry_run:
+        console.print(f"[green]Published:[/green] {url}")
+
+
+@app.command("publish-steering")
+def publish_steering_command(
+    vector: str = typer.Option(..., "--vector", help="Steering vector registry name."),  # noqa: B008
+    repo: str = typer.Option(  # noqa: B008
+        ..., "--repo", help="HuggingFace repo id, e.g. myorg/sv-sentiment."
+    ),
+    create_repo: bool = typer.Option(True, "--create-repo/--no-create-repo"),  # noqa: B008
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print bundle without uploading."),  # noqa: B008
+) -> None:
+    """Bundle a registered steering vector and upload it to HuggingFace Hub.
+
+    Packages the .safetensors file, its JSON sidecar, and a generated README.md.
+
+    Use --dry-run to preview the bundle contents and target repo URL.
+    """
+    from mech_interp.publishing.hf_upload import build_steering_bundle, upload_bundle
+
+    try:
+        bundle = build_steering_bundle(vector)
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[bold #176b87]mech publish-steering[/bold #176b87]  "
+        f"vector=[bold]{vector}[/bold]  "
+        f"target=[dim]{repo}[/dim]"
+    )
+
+    try:
+        url = upload_bundle(bundle, repo_id=repo, create_repo=create_repo, dry_run=dry_run)
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if not dry_run:
+        console.print(f"[green]Published:[/green] {url}")
+
+
+@app.command("publish-investigation")
+def publish_investigation_command(
+    slug: str = typer.Option(  # noqa: B008
+        ..., "--slug", help="Investigation slug (filename without .md)."
+    ),
+    repo: str = typer.Option(  # noqa: B008
+        ..., "--repo", help="HuggingFace repo id, e.g. myorg/inv-sae-replication."
+    ),
+    create_repo: bool = typer.Option(True, "--create-repo/--no-create-repo"),  # noqa: B008
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print bundle without uploading."),  # noqa: B008
+) -> None:
+    """Bundle an investigation doc + publication artifacts and upload to HuggingFace Hub.
+
+    Packages docs/investigations/<slug>.md, any docs/publications/<slug>_artifacts/
+    files, and a generated README.md.
+
+    Use --dry-run to preview the bundle contents and target repo URL.
+    """
+    from mech_interp.publishing.hf_upload import build_investigation_bundle, upload_bundle
+
+    try:
+        bundle = build_investigation_bundle(slug)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[bold #176b87]mech publish-investigation[/bold #176b87]  "
+        f"slug=[bold]{slug}[/bold]  "
+        f"target=[dim]{repo}[/dim]"
+    )
+
+    try:
+        url = upload_bundle(bundle, repo_id=repo, create_repo=create_repo, dry_run=dry_run)
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if not dry_run:
+        console.print(f"[green]Published:[/green] {url}")
+
+
+@app.command("publish-all")
+def publish_all_command(
+    user: str = typer.Option(..., "--user", help="HuggingFace user or org namespace."),  # noqa: B008
+    artifact_root: Path = typer.Option(  # noqa: B008
+        Path("artifacts"), "--artifact-root", help="Root artifacts directory."
+    ),
+    sae_run_ids: str = typer.Option(  # noqa: B008
+        "",
+        "--sae-run-ids",
+        help="Comma-separated SAE run IDs to publish (default: auto-detect from artifacts/).",
+    ),
+    create_repo: bool = typer.Option(True, "--create-repo/--no-create-repo"),  # noqa: B008
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print bundles without uploading."),  # noqa: B008
+) -> None:
+    """Bundle and upload ALL registered artifacts under one HuggingFace namespace.
+
+    Publishes:
+      - Each SAE run found in artifact_root (or those specified by --sae-run-ids)
+      - Every steering vector in STEERING_REGISTRY
+      - Every investigation in docs/investigations/
+
+    Repos are named: <user>/sae-run<N>-<model>, <user>/sv-<vector-name>,
+    <user>/inv-<slug>.
+
+    Use --dry-run to preview all bundles without uploading anything.
+    Requires huggingface-cli login for the real run.
+    """
+    import re
+
+    from mech_interp.publishing.hf_upload import (
+        build_investigation_bundle,
+        build_sae_bundle,
+        build_steering_bundle,
+        upload_bundle,
+    )
+    from mech_interp.steering.registry import STEERING_REGISTRY
+
+    errors: list[str] = []
+    published: list[str] = []
+
+    # --- SAE runs ---
+    if sae_run_ids.strip():
+        run_ids = [int(x.strip()) for x in sae_run_ids.split(",") if x.strip()]
+    else:
+        run_dir_re = re.compile(r"^run-(\d+)$")
+        run_ids = []
+        if artifact_root.exists():
+            for entry in sorted(artifact_root.iterdir()):
+                m = run_dir_re.match(entry.name)
+                if m and (entry / "sae_weights.safetensors").exists():
+                    run_ids.append(int(m.group(1)))
+
+    console.print(
+        f"[bold #176b87]mech publish-all[/bold #176b87]  "
+        f"user=[bold]{user}[/bold]  "
+        f"sae_runs={run_ids}  "
+        f"{'[yellow]DRY RUN[/yellow]' if dry_run else ''}"
+    )
+    console.print()
+
+    for run_id in run_ids:
+        try:
+            bundle = build_sae_bundle(run_id, artifact_root=artifact_root)
+            model_slug = "-".join(bundle.name.split("-")[3:]) or bundle.name
+            repo_id = f"{user}/sae-run{run_id}-{model_slug}"
+            url = upload_bundle(bundle, repo_id=repo_id, create_repo=create_repo, dry_run=dry_run)
+            published.append(url)
+            if not dry_run:
+                console.print(f"[green]SAE run {run_id}:[/green] {url}")
+        except Exception as exc:  # noqa: BLE001
+            msg = f"SAE run {run_id}: {exc}"
+            errors.append(msg)
+            console.print(f"[red]SKIP {msg}[/red]")
+
+    for name in sorted(STEERING_REGISTRY):
+        try:
+            bundle = build_steering_bundle(name)
+            safe_name = name.replace(".", "-")
+            repo_id = f"{user}/sv-{safe_name}"
+            url = upload_bundle(bundle, repo_id=repo_id, create_repo=create_repo, dry_run=dry_run)
+            published.append(url)
+            if not dry_run:
+                console.print(f"[green]Steering {name}:[/green] {url}")
+        except Exception as exc:  # noqa: BLE001
+            msg = f"Steering {name}: {exc}"
+            errors.append(msg)
+            console.print(f"[red]SKIP {msg}[/red]")
+
+    docs_inv_dir = Path("docs") / "investigations"
+    if docs_inv_dir.exists():
+        for md_file in sorted(docs_inv_dir.glob("*.md")):
+            slug = md_file.stem
+            if slug == "index":
+                continue
+            try:
+                bundle = build_investigation_bundle(slug)
+                safe_slug = slug.replace("_", "-")
+                repo_id = f"{user}/inv-{safe_slug}"
+                url = upload_bundle(
+                    bundle, repo_id=repo_id, create_repo=create_repo, dry_run=dry_run
+                )
+                published.append(url)
+                if not dry_run:
+                    console.print(f"[green]Investigation {slug}:[/green] {url}")
+            except Exception as exc:  # noqa: BLE001
+                msg = f"Investigation {slug}: {exc}"
+                errors.append(msg)
+                console.print(f"[red]SKIP {msg}[/red]")
+
+    console.print()
+    if dry_run:
+        console.print(
+            f"[bold]Dry run complete.[/bold] "
+            f"{len(published)} bundle(s) previewed, {len(errors)} skipped."
+        )
+        console.print(
+            "[dim]Run without [bold]--dry-run[/bold] after "
+            "[bold]huggingface-cli login[/bold] to publish.[/dim]"
+        )
+    else:
+        console.print(f"[bold green]Published {len(published)} artifact(s).[/bold green]")
+    if errors:
+        raise typer.Exit(code=1)

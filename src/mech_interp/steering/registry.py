@@ -137,23 +137,46 @@ def load_steering_vector(
 
     descriptor = STEERING_REGISTRY[name]
 
-    if descriptor.local_path is None:
-        raise ValueError(
-            f"Steering vector '{name}' has no local_path set and HF download "
-            "is not yet implemented.  Set local_path or run the extraction script."
-        )
-
     # Resolve path relative to project root
     if base_dir is None:
         base_dir = Path(__file__).parent.parent.parent.parent  # src/mech_interp/steering -> root
 
-    resolved = base_dir / descriptor.local_path
-    if not resolved.exists():
-        raise FileNotFoundError(
-            f"Steering vector file not found: {resolved}\n"
-            f"Run the extraction script to produce it, or check that "
-            f"data/steering/ was committed to the repository."
-        )
+    if descriptor.local_path is not None:
+        resolved = base_dir / descriptor.local_path
+    else:
+        resolved = None
+
+    if resolved is None or not resolved.exists():
+        # Fall back to HuggingFace Hub download when local file is absent
+        if descriptor.hf_repo is not None:
+            try:
+                from huggingface_hub import hf_hub_download
+            except ImportError as exc:
+                raise RuntimeError(
+                    "huggingface_hub is required to download steering vectors. "
+                    "Run: uv sync --extra interp"
+                ) from exc
+            weights_filename = (
+                descriptor.local_path.name
+                if descriptor.local_path is not None
+                else "direction.safetensors"
+            )
+            local_file = hf_hub_download(
+                repo_id=descriptor.hf_repo,
+                filename=weights_filename,
+            )
+            resolved = Path(local_file)
+        elif resolved is None:
+            raise ValueError(
+                f"Steering vector '{name}' has no local_path and no hf_repo set. "
+                "Set local_path or run the extraction script."
+            )
+        else:
+            raise FileNotFoundError(
+                f"Steering vector file not found: {resolved}\n"
+                f"Run the extraction script to produce it, or check that "
+                f"data/steering/ was committed to the repository."
+            )
 
     try:
         from safetensors.torch import load_file
