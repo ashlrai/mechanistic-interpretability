@@ -1,0 +1,25 @@
+name: polysemanticity-sae-layer6-512
+family: polysemanticity_sae
+backend: transformerlens
+description: >-
+  Larger Top-K SAE (512 features, k=32) on gpt2-small layer-6 residual stream.
+  10 epochs to compensate for the larger dictionary. Used for the Investigation #3
+  robustness check — tests whether bigger dictionaries are more or less stable
+  across random seeds than the baseline 128-feature SAE.
+parameters:
+  model: gpt2-small
+  hook_site: blocks.6.hook_resid_pre
+  n_features: 512
+  k: 32
+  epochs: 10
+  batch_size: 64
+  learning_rate: 0.001
+  seed: 42
+  device: cpu
+  corpus_path: data/prompts/openwebtext_sample.jsonl
+  seq_len: 64
+  max_tokens: 2000
+  artifact_policy:
+    retain_weights: true
+    write_feature_analysis: true
+    top_prompts_per_feature: 5

@@ -1,0 +1,31 @@
+name: polysemanticity-sae-layer6
+family: polysemanticity_sae
+backend: transformerlens
+description: 'Top-K SAE on gpt2-small layer-6 residual stream. Layer 6 is mid-network
+  (12 layers total) where the logit-lens rank analysis shows representations begin
+  to stabilise. Used for the Investigation #3 robustness check — comparing seed stability
+  at a more structured layer vs layer 0.'
+parameters:
+  model: gpt2-small
+  hook_site: blocks.6.hook_resid_pre
+  n_features: 128
+  k: 8
+  epochs: 8
+  batch_size: 64
+  learning_rate: 0.001
+  seed: 42
+  device: cpu
+  corpus_path: data/prompts/openwebtext_sample.jsonl
+  seq_len: 64
+  max_tokens: 2000
+  artifact_policy:
+    retain_weights: true
+    write_feature_analysis: true
+    top_prompts_per_feature: 5
+matrix:
+  parameters.seed:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5

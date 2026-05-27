@@ -1731,6 +1731,16 @@ def analyze_sae_stability_command(
         int,
         typer.Option("--top-k", help="Top matched pairs to include per pair in the report."),
     ] = 20,
+    live_only: Annotated[
+        bool,
+        typer.Option(
+            "--live-only/--all-features",
+            help=(
+                "Restrict Hungarian matching to live (non-dead) features only. "
+                "Requires feature_analysis.json in each run directory."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Compute pairwise SAE decoder-direction alignment across seed-varied runs.
 
@@ -1739,8 +1749,12 @@ def analyze_sae_stability_command(
     plus a Rich summary table.
 
     --runs accepts either integer run IDs (e.g. 1,2,3) or absolute directory paths.
+    Use --live-only to restrict matching to non-dead features (requires feature_analysis.json).
     """
-    from mech_interp.analysis.sae_seed_stability import compute_stability_report
+    from mech_interp.analysis.sae_seed_stability import (
+        compute_live_only_stability_report,
+        compute_stability_report,
+    )
 
     config = load_config()
     artifact_root = config.project.artifact_dir
@@ -1771,11 +1785,15 @@ def analyze_sae_stability_command(
         f"({len(run_dirs) * (len(run_dirs) - 1) // 2} pairs)…"
     )
 
-    report = compute_stability_report(run_dirs, top_k=top_k, threshold=threshold)
+    if live_only:
+        report = compute_live_only_stability_report(run_dirs, top_k=top_k, threshold=threshold)
+    else:
+        report = compute_stability_report(run_dirs, top_k=top_k, threshold=threshold)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    console.print(f"Report written to [bold]{output}[/bold]")
+    mode_label = " (live-only)" if live_only else ""
+    console.print(f"Report{mode_label} written to [bold]{output}[/bold]")
 
     # Summary table
     summary = report["summary"]
@@ -1885,3 +1903,72 @@ def calibrate_tuned_lens(
     saved = save_tuned_lens(transforms, output_path)
     console.print(f"[green]Saved tuned-lens transforms to[/green] [bold]{saved}[/bold]")
     console.print(f"  Layers trained: {sorted(transforms.keys())}")
+
+
+@app.command("audit-refusal")
+def audit_refusal_command(
+    refusal_run: Annotated[
+        int, typer.Option("--refusal-run", "-R", help="Run ID for refusal_direction experiment")
+    ],
+    caa_run: Annotated[
+        int, typer.Option("--caa-run", "-C", help="Run ID for caa_steering experiment")
+    ],
+    circuit_run: Annotated[
+        int, typer.Option("--circuit-run", "-P", help="Run ID for circuit_patching experiment")
+    ],
+    scrub_run: Annotated[
+        int, typer.Option("--scrub-run", "-S", help="Run ID for causal_scrubbing experiment")
+    ],
+    output: Annotated[
+        str,
+        typer.Option("--output", help="Output path stem; .json and .md are written alongside"),
+    ] = "docs/investigations/refusal_audit",
+) -> None:
+    """Compile a structured refusal safety-audit report from four run IDs.
+
+    Reads stored results for a refusal_direction run, a caa_steering run,
+    a circuit_patching run, and a causal_scrubbing run, then writes:
+
+    \\b
+      <output>.json  -- machine-readable RefusalAuditReport
+      <output>.md    -- human-readable Markdown summary
+    """
+    from mech_interp.analysis.refusal_audit import compile_refusal_audit
+
+    cfg = load_config()
+    store = SQLiteResultStore(cfg.project.database_path, cfg.project.artifact_dir)
+
+    console.print(
+        f"Compiling refusal audit from runs: "
+        f"refusal={refusal_run}, caa={caa_run}, circuit={circuit_run}, scrub={scrub_run}"
+    )
+
+    try:
+        report = compile_refusal_audit(
+            refusal_run_id=refusal_run,
+            caa_run_id=caa_run,
+            circuit_run_id=circuit_run,
+            scrub_run_id=scrub_run,
+            store=store,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Audit failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    output_stem = Path(output)
+    output_stem.parent.mkdir(parents=True, exist_ok=True)
+
+    json_path = output_stem.with_suffix(".json")
+    md_path = output_stem.with_suffix(".md")
+
+    json_path.write_text(report.to_json(), encoding="utf-8")
+    md_path.write_text(report.to_markdown(), encoding="utf-8")
+
+    console.print(f"[green]JSON report:[/green] {json_path}")
+    console.print(f"[green]Markdown report:[/green] {md_path}")
+    console.print(
+        f"\n[bold]Headline:[/bold] "
+        f"peak refusal_rate_shift={report.refusal_rate_shift_at_best:.2f}, "
+        f"best_layer={report.best_steering_layer}, "
+        f"faithfulness={report.circuit_faithfulness:.4f}"
+    )

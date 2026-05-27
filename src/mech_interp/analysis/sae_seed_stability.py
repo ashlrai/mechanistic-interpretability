@@ -13,6 +13,15 @@ compute_sae_pair_alignment(sae_path_a, sae_path_b, *, top_k=20, threshold=0.9) -
 compute_stability_report(run_dirs, *, top_k=20, threshold=0.9) -> dict
     Given N run artifact directories, compute all N*(N-1)/2 pairwise alignments
     and return the full matrix plus aggregate stats.
+
+compute_live_only_alignment(sae_path_a, sae_path_b, analysis_path_a, analysis_path_b,
+                            *, top_k=20, threshold=0.9) -> dict
+    Like compute_sae_pair_alignment but restricts Hungarian matching to live
+    (non-dead) features identified from feature_analysis.json files. Returns the
+    same dict shape plus live_features_a/b counts.
+
+compute_live_only_stability_report(run_dirs, *, top_k=20, threshold=0.9) -> dict
+    Full N-run stability report using live-only matching for every pair.
 """
 
 from __future__ import annotations
@@ -277,6 +286,227 @@ def compute_stability_report(
         "mean_stability_fraction": round(float(np.mean(stability_fracs)), 4)
         if stability_fracs
         else 0.0,
+    }
+
+    return {
+        "runs": [str(d) for d in resolved],
+        "pairwise": pairwise,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public: live-feature-only single pair alignment
+# ---------------------------------------------------------------------------
+
+
+def _load_live_feature_indices(analysis_path: Path) -> set[int]:
+    """Read feature_analysis.json and return indices of non-dead features."""
+    data = json.loads(analysis_path.read_text(encoding="utf-8"))
+    return {
+        int(f["feature_index"])
+        for f in data.get("features", [])
+        if not f.get("dead", True)
+    }
+
+
+def compute_live_only_alignment(
+    sae_path_a: Path | str,
+    sae_path_b: Path | str,
+    analysis_path_a: Path | str,
+    analysis_path_b: Path | str,
+    *,
+    top_k: int = 20,
+    threshold: float = 0.9,
+) -> dict[str, Any]:
+    """Bipartite alignment restricted to live (non-dead) features.
+
+    Reads ``feature_analysis.json`` for each SAE to identify live features,
+    then runs Hungarian matching only on the live × live submatrix.
+
+    Parameters
+    ----------
+    sae_path_a, sae_path_b:
+        Paths to ``sae_weights.safetensors`` (or ``.pt``) files.
+    analysis_path_a, analysis_path_b:
+        Paths to the corresponding ``feature_analysis.json`` files.
+    top_k:
+        Number of top matched pairs to include.
+    threshold:
+        Cosine threshold for "same feature".
+
+    Returns
+    -------
+    Same dict shape as ``compute_sae_pair_alignment`` plus:
+        live_features_a   int — number of live features in SAE A
+        live_features_b   int — number of live features in SAE B
+        mode              str — "live_only"
+    """
+    import numpy as np
+
+    path_a = Path(sae_path_a)
+    path_b = Path(sae_path_b)
+
+    dirs_a = _load_decoder_directions(path_a)  # (n_a, d_model)
+    dirs_b = _load_decoder_directions(path_b)  # (n_b, d_model)
+
+    if dirs_a.shape[1] != dirs_b.shape[1]:
+        raise ValueError(
+            f"d_model mismatch: {dirs_a.shape[1]} vs {dirs_b.shape[1]}. "
+            "Both SAEs must have been trained on the same model architecture."
+        )
+
+    live_a = sorted(_load_live_feature_indices(Path(analysis_path_a)))
+    live_b = sorted(_load_live_feature_indices(Path(analysis_path_b)))
+
+    if not live_a or not live_b:
+        # Degenerate case: one SAE has no live features
+        return {
+            "matched_count_above_threshold": 0,
+            "threshold": threshold,
+            "n_matched_pairs": 0,
+            "median_cosine": 0.0,
+            "mean_cosine": 0.0,
+            "top_matches": [],
+            "all_cosines": [],
+            "live_features_a": len(live_a),
+            "live_features_b": len(live_b),
+            "mode": "live_only",
+        }
+
+    import torch
+
+    # Submatrix: (n_live_a, n_live_b)
+    sub_a = dirs_a[live_a]  # (n_live_a, d_model)
+    sub_b = dirs_b[live_b]  # (n_live_b, d_model)
+    sim: Any = (sub_a @ sub_b.t()).numpy()  # numpy array
+
+    pairs = _bipartite_match(sim)
+
+    cosines = [float(sim[i, j]) for i, j in pairs]
+    above = sum(1 for c in cosines if c >= threshold)
+
+    sorted_pairs = sorted(pairs, key=lambda p: sim[p[0], p[1]], reverse=True)
+    top_matches = [
+        {
+            "a_idx": int(live_a[i]),
+            "b_idx": int(live_b[j]),
+            "cosine": round(float(sim[i, j]), 6),
+        }
+        for i, j in sorted_pairs[:top_k]
+    ]
+
+    arr = np.array(cosines, dtype=float)
+    median_cosine = float(np.median(arr)) if len(arr) else 0.0
+    mean_cosine = float(np.mean(arr)) if len(arr) else 0.0
+
+    _ = torch  # imported for matmul; computation via numpy
+
+    return {
+        "matched_count_above_threshold": above,
+        "threshold": threshold,
+        "n_matched_pairs": len(pairs),
+        "median_cosine": round(median_cosine, 6),
+        "mean_cosine": round(mean_cosine, 6),
+        "top_matches": top_matches,
+        "all_cosines": [round(c, 6) for c in cosines],
+        "live_features_a": len(live_a),
+        "live_features_b": len(live_b),
+        "mode": "live_only",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public: full N-run live-only stability report
+# ---------------------------------------------------------------------------
+
+
+def compute_live_only_stability_report(
+    run_dirs: Sequence[Path | str],
+    *,
+    top_k: int = 20,
+    threshold: float = 0.9,
+) -> dict[str, Any]:
+    """Compute pairwise live-only alignment for every pair of run directories.
+
+    Each directory must contain ``sae_weights.safetensors`` (or ``.pt``) and
+    ``feature_analysis.json``.
+
+    Returns the same structure as ``compute_stability_report`` with an extra
+    ``mode: "live_only"`` key in the summary and per-pair live feature counts.
+    """
+    import numpy as np
+
+    resolved: list[Path] = [Path(d) for d in run_dirs]
+
+    _WEIGHT_NAMES = ["sae_weights.safetensors", "sae_weights.pt"]
+
+    def _find_weights(run_dir: Path) -> Path:
+        for name in _WEIGHT_NAMES:
+            p = run_dir / name
+            if p.exists():
+                return p
+        raise FileNotFoundError(
+            f"No SAE weights found in {run_dir}. Tried: {_WEIGHT_NAMES}"
+        )
+
+    def _find_analysis(run_dir: Path) -> Path:
+        p = run_dir / "feature_analysis.json"
+        if not p.exists():
+            raise FileNotFoundError(
+                f"feature_analysis.json not found in {run_dir}. "
+                "Re-run the experiment with artifact_policy.write_feature_analysis=true."
+            )
+        return p
+
+    weight_paths = [_find_weights(d) for d in resolved]
+    analysis_paths = [_find_analysis(d) for d in resolved]
+
+    pairwise: list[dict[str, Any]] = []
+    n = len(resolved)
+    for i in range(n):
+        for j in range(i + 1, n):
+            logger.info(
+                "Live-only aligning %s ↔ %s", resolved[i].name, resolved[j].name
+            )
+            result = compute_live_only_alignment(
+                weight_paths[i],
+                weight_paths[j],
+                analysis_paths[i],
+                analysis_paths[j],
+                top_k=top_k,
+                threshold=threshold,
+            )
+            pairwise.append(
+                {
+                    "run_a": str(resolved[i]),
+                    "run_b": str(resolved[j]),
+                    "run_a_name": resolved[i].name,
+                    "run_b_name": resolved[j].name,
+                    **result,
+                }
+            )
+
+    all_medians = [p["median_cosine"] for p in pairwise]
+    all_means = [p["mean_cosine"] for p in pairwise]
+    stability_fracs = [
+        p["matched_count_above_threshold"] / p["n_matched_pairs"]
+        if p["n_matched_pairs"] > 0
+        else 0.0
+        for p in pairwise
+    ]
+
+    summary: dict[str, Any] = {
+        "n_runs": n,
+        "n_pairs": len(pairwise),
+        "threshold": threshold,
+        "median_of_medians": round(float(np.median(all_medians)), 6) if all_medians else 0.0,
+        "mean_of_means": round(float(np.mean(all_means)), 6) if all_means else 0.0,
+        "stability_fraction_per_pair": [round(f, 4) for f in stability_fracs],
+        "mean_stability_fraction": round(float(np.mean(stability_fracs)), 4)
+        if stability_fracs
+        else 0.0,
+        "mode": "live_only",
     }
 
     return {

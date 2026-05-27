@@ -217,3 +217,158 @@ class TestComputeStabilityReport:
         assert "run_b_name" in pair
         assert "median_cosine" in pair
         assert "all_cosines" in pair
+
+
+# ---------------------------------------------------------------------------
+# Helpers for live-only tests
+# ---------------------------------------------------------------------------
+
+
+def _write_feature_analysis(run_dir: Path, live_indices: list[int], n_features: int) -> Path:
+    """Write a minimal feature_analysis.json marking given indices as live."""
+    features = []
+    for i in range(n_features):
+        features.append({"feature_index": i, "dead": i not in live_indices})
+    data = {"n_features": n_features, "dead_count": n_features - len(live_indices),
+            "live_count": len(live_indices), "mean_features_per_token": 0.5, "features": features}
+    p = run_dir / "feature_analysis.json"
+    import json as _json
+    p.write_text(_json.dumps(data), encoding="utf-8")
+    return p
+
+
+# ---------------------------------------------------------------------------
+# Tests: compute_live_only_alignment
+# ---------------------------------------------------------------------------
+
+
+class TestComputeLiveOnlyAlignment:
+    def test_live_only_identical_saes_high_cosine(self, tmp_path: Path) -> None:
+        import torch
+
+        from mech_interp.analysis.sae_seed_stability import compute_live_only_alignment
+
+        W = torch.randn(8, 4)
+        dir_a = _write_sae(tmp_path, "lo_a", W)
+        dir_b = _write_sae(tmp_path, "lo_b", W)
+        ana_a = _write_feature_analysis(dir_a, live_indices=[0, 1, 2], n_features=4)
+        ana_b = _write_feature_analysis(dir_b, live_indices=[0, 1, 2], n_features=4)
+
+        result = compute_live_only_alignment(
+            dir_a / "sae_weights.safetensors",
+            dir_b / "sae_weights.safetensors",
+            ana_a,
+            ana_b,
+            threshold=0.9,
+        )
+
+        assert result["mode"] == "live_only"
+        assert result["live_features_a"] == 3
+        assert result["live_features_b"] == 3
+        assert result["n_matched_pairs"] == 3
+        assert result["median_cosine"] == pytest.approx(1.0, abs=1e-4)
+        assert result["matched_count_above_threshold"] == 3
+
+    def test_live_only_restricts_to_live(self, tmp_path: Path) -> None:
+        """Dead features should be excluded: n_matched_pairs == min(live_a, live_b)."""
+        import torch
+
+        from mech_interp.analysis.sae_seed_stability import compute_live_only_alignment
+
+        W = torch.randn(8, 4)
+        dir_a = _write_sae(tmp_path, "restrict_a", W)
+        dir_b = _write_sae(tmp_path, "restrict_b", W)
+        # Only 2 live features in A, 3 in B → matching uses 2
+        ana_a = _write_feature_analysis(dir_a, live_indices=[0, 2], n_features=4)
+        ana_b = _write_feature_analysis(dir_b, live_indices=[0, 1, 3], n_features=4)
+
+        result = compute_live_only_alignment(
+            dir_a / "sae_weights.safetensors",
+            dir_b / "sae_weights.safetensors",
+            ana_a,
+            ana_b,
+        )
+
+        assert result["n_matched_pairs"] == 2
+
+    def test_live_only_no_live_features_returns_zero(self, tmp_path: Path) -> None:
+        import torch
+
+        from mech_interp.analysis.sae_seed_stability import compute_live_only_alignment
+
+        W = torch.randn(8, 4)
+        dir_a = _write_sae(tmp_path, "dead_a", W)
+        dir_b = _write_sae(tmp_path, "dead_b", W)
+        ana_a = _write_feature_analysis(dir_a, live_indices=[], n_features=4)
+        ana_b = _write_feature_analysis(dir_b, live_indices=[0, 1], n_features=4)
+
+        result = compute_live_only_alignment(
+            dir_a / "sae_weights.safetensors",
+            dir_b / "sae_weights.safetensors",
+            ana_a,
+            ana_b,
+        )
+
+        assert result["n_matched_pairs"] == 0
+        assert result["median_cosine"] == 0.0
+
+    def test_live_only_return_keys(self, tmp_path: Path) -> None:
+        import torch
+
+        from mech_interp.analysis.sae_seed_stability import compute_live_only_alignment
+
+        W = torch.randn(8, 4)
+        dir_a = _write_sae(tmp_path, "keys2_a", W)
+        dir_b = _write_sae(tmp_path, "keys2_b", W)
+        ana_a = _write_feature_analysis(dir_a, live_indices=[0, 1], n_features=4)
+        ana_b = _write_feature_analysis(dir_b, live_indices=[0, 1], n_features=4)
+
+        result = compute_live_only_alignment(
+            dir_a / "sae_weights.safetensors",
+            dir_b / "sae_weights.safetensors",
+            ana_a,
+            ana_b,
+        )
+
+        expected = {"matched_count_above_threshold", "threshold", "n_matched_pairs",
+                    "median_cosine", "mean_cosine", "top_matches", "all_cosines",
+                    "live_features_a", "live_features_b", "mode"}
+        assert expected.issubset(result.keys())
+
+
+# ---------------------------------------------------------------------------
+# Tests: compute_live_only_stability_report
+# ---------------------------------------------------------------------------
+
+
+class TestComputeLiveOnlyStabilityReport:
+    def test_three_identical_runs_live_only(self, tmp_path: Path) -> None:
+        import torch
+
+        from mech_interp.analysis.sae_seed_stability import compute_live_only_stability_report
+
+        W = torch.randn(8, 4)
+        dirs = []
+        for i in range(3):
+            d = _write_sae(tmp_path, f"lo_rep_{i}", W)
+            _write_feature_analysis(d, live_indices=[0, 1, 2, 3], n_features=4)
+            dirs.append(d)
+
+        report = compute_live_only_stability_report(dirs, threshold=0.9)
+
+        assert report["summary"]["n_pairs"] == 3
+        assert report["summary"]["mode"] == "live_only"
+        assert report["summary"]["median_of_medians"] == pytest.approx(1.0, abs=1e-3)
+
+    def test_missing_feature_analysis_raises(self, tmp_path: Path) -> None:
+        import torch
+
+        from mech_interp.analysis.sae_seed_stability import compute_live_only_stability_report
+
+        W = torch.randn(8, 4)
+        dir_a = _write_sae(tmp_path, "noa_a", W)
+        dir_b = _write_sae(tmp_path, "noa_b", W)
+        # dir_a has no feature_analysis.json
+
+        with pytest.raises(FileNotFoundError, match="feature_analysis.json"):
+            compute_live_only_stability_report([dir_a, dir_b])

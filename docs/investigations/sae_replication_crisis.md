@@ -140,30 +140,89 @@ unrelated random unit vectors in a 768-d space (expected cosine ≈ 0).
 
 ---
 
-## What Would Make This Conclusive
+## Robustness Checks (Investigation #3 Follow-Up)
+
+Three confounds were identified in the initial result and addressed in a follow-up
+experiment. Results are compared across four conditions below.
+
+### Four-Condition Comparison
+
+| Condition | n_features | layer | matching | median cosine | stab @ ≥0.9 |
+|---|---|---|---|---|---|
+| Layer-0 128f (full matrix, original) | 128 | 0 | all features | **0.095** | **0.16%** |
+| Layer-0 128f (live-only) | 128 | 0 | live only | **0.500** | **0.48%** |
+| Layer-6 128f (live-only) | 128 | 6 | live only | **0.323** | **0.00%** |
+| Layer-6 512f (live-only) | 512 | 6 | live only | **0.257** | **0.00%** |
+
+Training details:
+- Layer-0 128f: 128 features, k=8, 8 epochs, seeds 1-5, ~40-45 live features/run (~66% dead)
+- Layer-6 128f: 128 features, k=8, 8 epochs, seeds 1-5, ~63-78 live features/run (~46% dead)
+- Layer-6 512f: 512 features, k=32, 10 epochs, seeds 1-5, ~289-313 live features/run (~40% dead)
+- All runs: gpt2-small, 100-doc openwebtext corpus, 992 tokens
+
+### Does Fixing the Confounds Change the Headline?
+
+**The claim holds up, but with important nuance.**
+
+**Confound 1 — dead features.** Restricting to live-only features at layer 0 raises
+the median cosine from 0.095 to 0.500. This is the single largest effect of any
+confound. It means dead-to-dead random matching was strongly deflating the full-matrix
+result. Among features that actually activate, the typical best-match cosine is ~0.5 —
+meaningful overlap but well below the 0.9 threshold that would indicate reproducibility.
+Stability fraction at ≥ 0.9 rises from 0.16% to 0.48% — essentially still zero.
+
+**Confound 2 — layer.** Moving to layer 6 (mid-network) does *not* improve stability —
+it makes it worse. Live-only median drops from 0.500 (layer 0) to 0.323 (layer 6).
+This is counterintuitive: layer 6 representations are more structured (better logit-lens
+rank) yet less seed-stable. One hypothesis: layer 0 is close to the embedding space,
+which constrains the manifold of useful directions; layer 6 has more degrees of freedom
+and thus more equivalent solutions.
+
+**Confound 3 — dictionary size.** Larger SAEs (512 features vs 128) at layer 6 show
+slightly lower median cosine (0.257 vs 0.323). More features means more redundancy in
+the overcomplete basis and more equivalent solutions, which is consistent with theory.
+
+**Overall verdict:** Fixing all three confounds does not rescue the stability claim.
+Even in the best condition (layer 0, live-only matching), the median matched cosine
+is 0.5 and the stability fraction at ≥ 0.9 is under 0.5%. SAE feature dictionaries
+remain substantially non-reproducible across random seeds.
+
+The one softening: "live features are not entirely random" — a median cosine of 0.5
+means the better-trained features do partially overlap across seeds. The SAE is finding
+*something* real; it just isn't finding the same *particular* basis every time.
+
+---
+
+## What Would Make This Conclusive (Publication Gap)
 
 | Missing piece | What to do |
 |---|---|
-| Only gpt2-small | Replicate on gpt2-medium, gpt2-xl, Llama-3-8B |
-| Only layer 0 | Run layers 0, 6, 11 (early, mid, late) |
-| Only 128 features | Test 256, 1024, 4096 features |
-| Dead-feature confound | Restrict matching to live features only |
-| Only 5 seeds | Run 20+ seeds; plot stability fraction vs seed count |
-| Only one corpus | Vary corpus domain (code, math, prose) |
-| Only cosine threshold | Add soft metrics: activation correlation, circuit-ablation equivalence |
+| Only gpt2-small | Replicate on gpt2-medium, gpt2-xl, Llama-3-8B (3+ models) |
+| Only layers 0 and 6 | Add layer 11 (final), plus intermediate layers 3, 9 (5 layers total) |
+| Only 128 and 512 features | Test 1024, 4096, 16384 features (4 sizes matching literature) |
+| Only 5 seeds | Run 20+ seeds; plot stability fraction vs seed count curve |
+| Only one corpus | Vary corpus domain: code, math, prose, multilingual (4 domains) |
+| Only cosine threshold | Add activation correlation (Pearson r) and circuit-ablation equivalence |
+| No statistical testing | Bootstrap CIs on median cosine; permutation test vs random baseline |
 
-The dead-feature confound is the most pressing: ~66% of 128 features were dead
-in every run. Dead features are random unit vectors with no activation signal.
-Matching dead-to-dead pairs inflates the count of low-cosine pairs and deflates
-the median. Restricting to live features only (roughly 40/128 per run) might
-show meaningfully higher stability among the features that actually activate.
+**Minimum viable publication:** 3 models × 5 layers × 4 dictionary sizes × 20 seeds
+= 1200 training runs. At ~30s each on CPU (or ~5s on A100), this is ~10 GPU-hours.
+The analysis pipeline already exists; what's missing is compute and model diversity.
+
+The current 15-run experiment is sufficient for a workshop paper or blog post framing
+the question and presenting preliminary evidence. To pass peer review at a top venue
+(NeurIPS, ICML, ICLR), the full sweep is required.
 
 ---
 
 ## Code
 
-- `src/mech_interp/analysis/sae_seed_stability.py` — `compute_sae_pair_alignment`, `compute_stability_report`
-- `src/mech_interp/cli.py` — `mech analyze-sae-stability` command
-- `tests/test_sae_seed_stability.py` — 8 unit tests (all passing)
-- `notebooks/06_sae_replication_crisis.ipynb` — full narrative analysis
-- `artifacts/seed_stability_report.json` — raw pairwise data (in worktree)
+- `src/mech_interp/analysis/sae_seed_stability.py` — `compute_sae_pair_alignment`, `compute_stability_report`, `compute_live_only_alignment`, `compute_live_only_stability_report`
+- `src/mech_interp/cli.py` — `mech analyze-sae-stability` (with `--live-only` flag)
+- `tests/test_sae_seed_stability.py` — 14 unit tests (all passing)
+- `notebooks/06_sae_replication_crisis.ipynb` — full narrative analysis with robustness checks
+- `experiments/polysemanticity_sae_layer6.yaml` — layer-6 128f sweep config
+- `experiments/polysemanticity_sae_layer6_512.yaml` — layer-6 512f sweep config
+- `artifacts/stability_layer0_128.json` — layer-0 full+live results
+- `artifacts/stability_layer6_128.json` — layer-6 128f live results
+- `artifacts/stability_layer6_512.json` — layer-6 512f live results
