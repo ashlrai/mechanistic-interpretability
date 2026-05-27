@@ -1709,6 +1709,107 @@ def sweep_report_command(
     )
 
 
+@app.command("analyze-sae-stability")
+def analyze_sae_stability_command(
+    runs: Annotated[
+        str,
+        typer.Option(
+            "--runs",
+            "-r",
+            help="Comma-separated run IDs (integers) or absolute artifact directory paths.",
+        ),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Path for seed_stability_report.json."),
+    ] = Path("artifacts/seed_stability_report.json"),
+    threshold: Annotated[
+        float,
+        typer.Option("--threshold", "-t", help="Cosine similarity threshold for 'same feature'."),
+    ] = 0.9,
+    top_k: Annotated[
+        int,
+        typer.Option("--top-k", help="Top matched pairs to include per pair in the report."),
+    ] = 20,
+) -> None:
+    """Compute pairwise SAE decoder-direction alignment across seed-varied runs.
+
+    Loads sae_weights.safetensors from each run's artifact directory, runs the
+    Hungarian bipartite matching on all N*(N-1)/2 pairs, and writes a JSON report
+    plus a Rich summary table.
+
+    --runs accepts either integer run IDs (e.g. 1,2,3) or absolute directory paths.
+    """
+    from mech_interp.analysis.sae_seed_stability import compute_stability_report
+
+    config = load_config()
+    artifact_root = config.project.artifact_dir
+
+    # Resolve run dirs
+    run_dirs: list[Path] = []
+    for token in runs.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            run_id = int(token)
+            run_dirs.append(artifact_root / f"run-{run_id:06d}")
+        except ValueError:
+            run_dirs.append(Path(token))
+
+    if len(run_dirs) < 2:
+        console.print("[red]At least 2 run IDs/paths are required.[/red]")
+        raise typer.Exit(code=1)
+
+    for d in run_dirs:
+        if not d.is_dir():
+            console.print(f"[red]Run directory not found: {d}[/red]")
+            raise typer.Exit(code=1)
+
+    console.print(
+        f"Computing pairwise SAE alignment for [bold]{len(run_dirs)}[/bold] runs "
+        f"({len(run_dirs) * (len(run_dirs) - 1) // 2} pairs)…"
+    )
+
+    report = compute_stability_report(run_dirs, top_k=top_k, threshold=threshold)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    console.print(f"Report written to [bold]{output}[/bold]")
+
+    # Summary table
+    summary = report["summary"]
+    console.print(
+        f"\n[bold]Summary[/bold]  "
+        f"threshold={threshold}  "
+        f"median_of_medians={summary['median_of_medians']:.4f}  "
+        f"mean_stability_fraction={summary['mean_stability_fraction']:.2%}"
+    )
+
+    table = Table(title="Pairwise SAE Seed Alignment")
+    table.add_column("Run A", style="cyan")
+    table.add_column("Run B", style="cyan")
+    table.add_column("Median cosine", justify="right")
+    table.add_column("Mean cosine", justify="right")
+    table.add_column(f"Pairs >= {threshold}", justify="right")
+    table.add_column("Stability %", justify="right")
+
+    for pair in report["pairwise"]:
+        n_pairs = pair["n_matched_pairs"]
+        above = pair["matched_count_above_threshold"]
+        stab = above / n_pairs if n_pairs > 0 else 0.0
+        table.add_row(
+            pair["run_a_name"],
+            pair["run_b_name"],
+            f"{pair['median_cosine']:.4f}",
+            f"{pair['mean_cosine']:.4f}",
+            f"{above}/{n_pairs}",
+            f"{stab:.1%}",
+        )
+
+    console.print(table)
+
+
 @app.command("calibrate-tuned-lens")
 def calibrate_tuned_lens(
     model: Annotated[
