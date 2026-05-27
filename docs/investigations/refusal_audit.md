@@ -19,15 +19,45 @@ but do validate the mechanical pipeline end-to-end.
 
 ---
 
-## Headline Finding
+## Headline Finding (partial — Stage 1 complete, Stages 2-4 in progress)
 
-> **Refusal in `Qwen2.5-1.5B-Instruct` is primarily implemented at layer 10,
-> with the strongest causal signal concentrated in the attention outputs of
-> `blocks.9.attn.hook_z` and `blocks.10.attn.hook_z`.**
+> **Stage 1 confirms a linearly separable refusal direction in
+> `Qwen2.5-1.5B-Instruct` at `blocks.10.hook_resid_post` with extraction
+> quality 4.105 — strong evidence that refusal behavior IS encoded as a single
+> direction in the residual stream at this layer.**
+>
+> However, **layer 10 alone is NOT causally sufficient** for steering. Across
+> the 7-point coefficient sweep [−3, −2, −1, 0, +1, +2, +3] only coefficient
+> −3.0 changes refusal behavior (and it *increases* refusal: 0.33 → 0.67), not
+> decreases it. Stages 2-4 of the audit (multi-layer CAA, head-level circuit
+> patching, causal scrubbing) are required to find the actually-effective
+> intervention layer.
 
-The direction is linearly separable in the residual stream (extraction quality > 1.0 on
-the 5-pair training set), causally steerable with coefficient ±3 at layer 10
-(refusal rate shift ≥ 0.6 from baseline), and the two-head circuit achieves faithfulness
+### Stage 1 numbers (run-000070, `mech run --name refusal-direction-qwen`)
+
+| Quantity | Value |
+|---|---:|
+| Model | Qwen/Qwen2.5-1.5B-Instruct |
+| Hook site | blocks.10.hook_resid_post |
+| Extraction quality (projection margin) | **4.105** |
+| Baseline refusal rate (coeff=0) | 0.33 |
+| Refusal rate at coeff=−3.0 | 0.67 (+0.33) |
+| Refusal rate at coeff=−2,−1,0,+1,+2,+3 | 0.33 (no change) |
+| Wall-clock | 62 minutes CPU |
+
+### Interpretation
+
+Two observations stand out:
+
+1. **Extraction quality 4.1 is high.** Projection margin > 1 already indicates the harmful vs harmless activations are linearly separable along the direction. 4.1 means they're separated by ~4× the within-class standard deviation. The direction is *real*; it's a coherent property of the model's residual stream at layer 10.
+
+2. **Layer 10 is not the effective intervention layer.** A real refusal-controlling layer would show monotonic refusal-rate response to the steering coefficient. The Qwen sweep is essentially flat except at coeff=−3.0, where steering *increases* rather than *decreases* refusal. The most likely explanation is that the refusal mechanism reads from a different layer — adding the direction at layer 10 doesn't propagate to wherever the refusal decision is actually made, but at strong negative coefficient it perturbs the residual stream enough to disrupt the normal "respond" pathway, defaulting the model to its more conservative behavior.
+
+This is the kind of result the multi-layer CAA sweep (Stage 2, currently running) is designed to surface. Stage 1 alone is sufficient to *find* the direction; finding the layer to *use* it requires the layer sweep.
+
+### Original placeholder text (kept for reference)
+
+The two-head circuit achieves faithfulness
 ≈ 0.7–0.8 under causal scrubbing.
 
 *All specific numbers below should be filled in with actual run IDs after executing the
