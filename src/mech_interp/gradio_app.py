@@ -114,14 +114,10 @@ def analyze_prompt(
     import matplotlib.pyplot as plt
 
     prompt = prompt.strip()
-    correct_token = correct_token.strip() if correct_token.strip() else " Paris"
-    incorrect_token = incorrect_token.strip() if incorrect_token.strip() else " Rome"
-    # Ensure tokens start with a space if the user omitted it and it looks like a word
-    # (transformer tokenizers almost always have a leading-space variant for mid-sentence tokens)
-    if correct_token and not correct_token.startswith(" "):
-        correct_token = " " + correct_token
-    if incorrect_token and not incorrect_token.startswith(" "):
-        incorrect_token = " " + incorrect_token
+    # Ensure tokens start with a space (transformer tokenizers almost always
+    # have a leading-space variant for mid-sentence tokens).
+    correct_token = _normalize_token(correct_token, default=" Paris")
+    incorrect_token = _normalize_token(incorrect_token, default=" Rome")
 
     model = _load_model(model_name)
 
@@ -172,6 +168,14 @@ def analyze_prompt(
 # ---------------------------------------------------------------------------
 # Model loading (cached)
 # ---------------------------------------------------------------------------
+
+def _normalize_token(raw: str, *, default: str) -> str:
+    """Strip, fall back to *default* if empty, and ensure a leading space."""
+    stripped = raw.strip()
+    if not stripped:
+        return default
+    return stripped if stripped.startswith(" ") else " " + stripped
+
 
 def _load_model(model_name: str) -> Any:
     if model_name in _MODEL_CACHE:

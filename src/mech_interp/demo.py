@@ -141,8 +141,7 @@ def run_demo_experiments(output_dir: Path) -> DemoResult:
     # -----------------------------------------------------------------------
     # 1. Direct logit attribution
     # -----------------------------------------------------------------------
-    dla_dir = output_dir / "dla"
-    dla_dir.mkdir(parents=True, exist_ok=True)
+    dla_dir = _subdir(output_dir, "dla")
     dla_spec = ExperimentSpec(
         name="demo-dla",
         family="direct_logit_attribution",
@@ -168,8 +167,7 @@ def run_demo_experiments(output_dir: Path) -> DemoResult:
     # -----------------------------------------------------------------------
     # 2. Logit lens
     # -----------------------------------------------------------------------
-    lens_dir = output_dir / "lens"
-    lens_dir.mkdir(parents=True, exist_ok=True)
+    lens_dir = _subdir(output_dir, "lens")
     lens_spec = ExperimentSpec(
         name="demo-lens",
         family="logit_lens",
@@ -196,8 +194,7 @@ def run_demo_experiments(output_dir: Path) -> DemoResult:
     # -----------------------------------------------------------------------
     # 3. Circuit patching
     # -----------------------------------------------------------------------
-    patch_dir = output_dir / "patching"
-    patch_dir.mkdir(parents=True, exist_ok=True)
+    patch_dir = _subdir(output_dir, "patching")
     patch_spec = ExperimentSpec(
         name="demo-patching",
         family="circuit_patching",
@@ -513,6 +510,13 @@ def render_demo_markdown(result: DemoResult) -> str:
 # Private helpers
 # ---------------------------------------------------------------------------
 
+def _subdir(parent: Path, name: str) -> Path:
+    """Create ``parent / name`` if needed and return it."""
+    d = parent / name
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _make_run(run_id: int, spec: ExperimentSpec, artifact_dir: Path) -> ExperimentRun:
     return ExperimentRun(
         id=run_id,
@@ -525,15 +529,32 @@ def _make_run(run_id: int, spec: ExperimentSpec, artifact_dir: Path) -> Experime
     )
 
 
-def _parse_dla(result: DemoResult, exp_result: ExperimentResult) -> DemoResult:
+def _load_artifact_json(
+    result: DemoResult,
+    exp_result: ExperimentResult,
+    *,
+    artifact_key: str,
+    label: str,
+) -> Any | None:
+    """Return the loaded JSON for ``exp_result.artifacts[artifact_key]`` or None.
+
+    Appends a descriptive entry to ``result.errors`` and returns None when the
+    experiment failed or the artifact file is missing.
+    """
     if exp_result.status != RunStatus.SUCCEEDED:
-        result.errors.append(f"DLA status: {exp_result.status}")
+        result.errors.append(f"{label} status: {exp_result.status}")
+        return None
+    artifact_path = Path(exp_result.artifacts.get(artifact_key, ""))
+    if not artifact_path.exists():
+        result.errors.append(f"{label}: {artifact_key} artifact not found")
+        return None
+    return json.loads(artifact_path.read_text())
+
+
+def _parse_dla(result: DemoResult, exp_result: ExperimentResult) -> DemoResult:
+    summary = _load_artifact_json(result, exp_result, artifact_key="lda_summary", label="DLA")
+    if summary is None:
         return result
-    summary_path = Path(exp_result.artifacts.get("lda_summary", ""))
-    if not summary_path.exists():
-        result.errors.append("DLA: lda_summary artifact not found")
-        return result
-    summary: dict[str, Any] = json.loads(summary_path.read_text())
     top_positive = summary.get("top_positive", [])
     result.dla_total_components = int(summary.get("total_components", 0))
     if top_positive:
@@ -543,14 +564,11 @@ def _parse_dla(result: DemoResult, exp_result: ExperimentResult) -> DemoResult:
 
 
 def _parse_lens(result: DemoResult, exp_result: ExperimentResult) -> DemoResult:
-    if exp_result.status != RunStatus.SUCCEEDED:
-        result.errors.append(f"Logit lens status: {exp_result.status}")
+    summary = _load_artifact_json(
+        result, exp_result, artifact_key="lens_summary", label="Logit lens"
+    )
+    if summary is None:
         return result
-    summary_path = Path(exp_result.artifacts.get("lens_summary", ""))
-    if not summary_path.exists():
-        result.errors.append("Logit lens: lens_summary artifact not found")
-        return result
-    summary: dict[str, Any] = json.loads(summary_path.read_text())
     mean_rank = summary.get("mean_rank_by_layer", [])
     result.lens_n_layers = len(mean_rank)
     result.lens_final_rank = float(mean_rank[-1]) if mean_rank else 0.0
@@ -563,14 +581,11 @@ def _parse_lens(result: DemoResult, exp_result: ExperimentResult) -> DemoResult:
 
 
 def _parse_patch(result: DemoResult, exp_result: ExperimentResult) -> DemoResult:
-    if exp_result.status != RunStatus.SUCCEEDED:
-        result.errors.append(f"Circuit patching status: {exp_result.status}")
+    rows = _load_artifact_json(
+        result, exp_result, artifact_key="patching_ranked_json", label="Circuit patching"
+    )
+    if rows is None:
         return result
-    ranked_path = Path(exp_result.artifacts.get("patching_ranked_json", ""))
-    if not ranked_path.exists():
-        result.errors.append("Circuit patching: patching_ranked_json artifact not found")
-        return result
-    rows: list[dict[str, Any]] = json.loads(ranked_path.read_text())
     causal = [r for r in rows if r.get("evidence_label") == "causal evidence"]
     if causal:
         top = causal[0]

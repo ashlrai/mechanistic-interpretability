@@ -8,12 +8,6 @@ whether to capture the module's forward *output* (most TL sites) or *input*.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
-
-
 # ---------------------------------------------------------------------------
 # Architecture maps
 # ---------------------------------------------------------------------------
@@ -139,13 +133,9 @@ _MODEL_TYPE_ALIASES: dict[str, str] = {
 
 SUPPORTED_ARCHITECTURES = sorted(ARCHITECTURE_SITE_MAPS.keys())
 
-# Detect "raw" HF paths: contain a dot but don't start with "blocks."
-# These are passed through unchanged.
-_TL_PREFIX = "blocks."
-
-
 def _looks_like_hf_path(site: str) -> bool:
-    return "." in site and not site.startswith(_TL_PREFIX)
+    """Raw HF paths contain a dot but don't start with ``blocks.``."""
+    return "." in site and not site.startswith("blocks.")
 
 
 def _layer_from_tl_site(site: str) -> tuple[str, int]:

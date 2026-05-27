@@ -2325,6 +2325,28 @@ def gradio_command(
 # ---------------------------------------------------------------------------
 
 
+def _safe_build(factory: Any, errors: tuple[type[BaseException], ...]) -> Any:
+    """Build a bundle and exit with a red error message if *errors* is raised."""
+    try:
+        return factory()
+    except errors as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+
+def _do_upload(bundle: Any, *, repo: str, create_repo: bool, dry_run: bool) -> None:
+    """Upload *bundle* to *repo*; print URL on success, exit on RuntimeError."""
+    from mech_interp.publishing.hf_upload import upload_bundle
+
+    try:
+        url = upload_bundle(bundle, repo_id=repo, create_repo=create_repo, dry_run=dry_run)
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    if not dry_run:
+        console.print(f"[green]Published:[/green] {url}")
+
+
 @app.command("publish-sae")
 def publish_sae_command(
     run_id: int = typer.Option(..., "--run-id", help="Local SAE run ID (e.g. 51)."),  # noqa: B008
@@ -2347,28 +2369,17 @@ def publish_sae_command(
 
     Use --dry-run to preview the bundle contents and target repo URL.
     """
-    from mech_interp.publishing.hf_upload import build_sae_bundle, upload_bundle
+    from mech_interp.publishing.hf_upload import build_sae_bundle
 
-    try:
-        bundle = build_sae_bundle(run_id, artifact_root=artifact_root, license=license)
-    except FileNotFoundError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
-
+    bundle = _safe_build(
+        lambda: build_sae_bundle(run_id, artifact_root=artifact_root, license=license),
+        (FileNotFoundError,),
+    )
     console.print(
         f"[bold #176b87]mech publish-sae[/bold #176b87]  "
-        f"run={run_id}  bundle=[bold]{bundle.name}[/bold]  "
-        f"target=[dim]{repo}[/dim]"
+        f"run={run_id}  bundle=[bold]{bundle.name}[/bold]  target=[dim]{repo}[/dim]"
     )
-
-    try:
-        url = upload_bundle(bundle, repo_id=repo, create_repo=create_repo, dry_run=dry_run)
-    except RuntimeError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
-
-    if not dry_run:
-        console.print(f"[green]Published:[/green] {url}")
+    _do_upload(bundle, repo=repo, create_repo=create_repo, dry_run=dry_run)
 
 
 @app.command("publish-steering")
@@ -2386,28 +2397,17 @@ def publish_steering_command(
 
     Use --dry-run to preview the bundle contents and target repo URL.
     """
-    from mech_interp.publishing.hf_upload import build_steering_bundle, upload_bundle
+    from mech_interp.publishing.hf_upload import build_steering_bundle
 
-    try:
-        bundle = build_steering_bundle(vector)
-    except (KeyError, ValueError, FileNotFoundError) as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
-
+    bundle = _safe_build(
+        lambda: build_steering_bundle(vector),
+        (KeyError, ValueError, FileNotFoundError),
+    )
     console.print(
         f"[bold #176b87]mech publish-steering[/bold #176b87]  "
-        f"vector=[bold]{vector}[/bold]  "
-        f"target=[dim]{repo}[/dim]"
+        f"vector=[bold]{vector}[/bold]  target=[dim]{repo}[/dim]"
     )
-
-    try:
-        url = upload_bundle(bundle, repo_id=repo, create_repo=create_repo, dry_run=dry_run)
-    except RuntimeError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
-
-    if not dry_run:
-        console.print(f"[green]Published:[/green] {url}")
+    _do_upload(bundle, repo=repo, create_repo=create_repo, dry_run=dry_run)
 
 
 @app.command("publish-investigation")
@@ -2428,28 +2428,14 @@ def publish_investigation_command(
 
     Use --dry-run to preview the bundle contents and target repo URL.
     """
-    from mech_interp.publishing.hf_upload import build_investigation_bundle, upload_bundle
+    from mech_interp.publishing.hf_upload import build_investigation_bundle
 
-    try:
-        bundle = build_investigation_bundle(slug)
-    except FileNotFoundError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
-
+    bundle = _safe_build(lambda: build_investigation_bundle(slug), (FileNotFoundError,))
     console.print(
         f"[bold #176b87]mech publish-investigation[/bold #176b87]  "
-        f"slug=[bold]{slug}[/bold]  "
-        f"target=[dim]{repo}[/dim]"
+        f"slug=[bold]{slug}[/bold]  target=[dim]{repo}[/dim]"
     )
-
-    try:
-        url = upload_bundle(bundle, repo_id=repo, create_repo=create_repo, dry_run=dry_run)
-    except RuntimeError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
-
-    if not dry_run:
-        console.print(f"[green]Published:[/green] {url}")
+    _do_upload(bundle, repo=repo, create_repo=create_repo, dry_run=dry_run)
 
 
 @app.command("publish-all")
@@ -2492,6 +2478,20 @@ def publish_all_command(
     errors: list[str] = []
     published: list[str] = []
 
+    def _try_publish(label: str, repo_suffix: str, build: Any) -> None:
+        """Build, upload, and record success/failure under the *label* prefix."""
+        try:
+            bundle = build()
+            repo_id = f"{user}/{repo_suffix}"
+            url = upload_bundle(bundle, repo_id=repo_id, create_repo=create_repo, dry_run=dry_run)
+            published.append(url)
+            if not dry_run:
+                console.print(f"[green]{label}:[/green] {url}")
+        except Exception as exc:  # noqa: BLE001
+            msg = f"{label}: {exc}"
+            errors.append(msg)
+            console.print(f"[red]SKIP {msg}[/red]")
+
     # --- SAE runs ---
     if sae_run_ids.strip():
         run_ids = [int(x.strip()) for x in sae_run_ids.split(",") if x.strip()]
@@ -2514,31 +2514,25 @@ def publish_all_command(
 
     for run_id in run_ids:
         try:
-            bundle = build_sae_bundle(run_id, artifact_root=artifact_root)
-            model_slug = "-".join(bundle.name.split("-")[3:]) or bundle.name
-            repo_id = f"{user}/sae-run{run_id}-{model_slug}"
-            url = upload_bundle(bundle, repo_id=repo_id, create_repo=create_repo, dry_run=dry_run)
-            published.append(url)
-            if not dry_run:
-                console.print(f"[green]SAE run {run_id}:[/green] {url}")
+            sae_bundle = build_sae_bundle(run_id, artifact_root=artifact_root)
         except Exception as exc:  # noqa: BLE001
             msg = f"SAE run {run_id}: {exc}"
             errors.append(msg)
             console.print(f"[red]SKIP {msg}[/red]")
+            continue
+        model_slug = "-".join(sae_bundle.name.split("-")[3:]) or sae_bundle.name
+        _try_publish(
+            f"SAE run {run_id}",
+            f"sae-run{run_id}-{model_slug}",
+            lambda b=sae_bundle: b,
+        )
 
     for name in sorted(STEERING_REGISTRY):
-        try:
-            bundle = build_steering_bundle(name)
-            safe_name = name.replace(".", "-")
-            repo_id = f"{user}/sv-{safe_name}"
-            url = upload_bundle(bundle, repo_id=repo_id, create_repo=create_repo, dry_run=dry_run)
-            published.append(url)
-            if not dry_run:
-                console.print(f"[green]Steering {name}:[/green] {url}")
-        except Exception as exc:  # noqa: BLE001
-            msg = f"Steering {name}: {exc}"
-            errors.append(msg)
-            console.print(f"[red]SKIP {msg}[/red]")
+        _try_publish(
+            f"Steering {name}",
+            f"sv-{name.replace('.', '-')}",
+            lambda n=name: build_steering_bundle(n),
+        )
 
     docs_inv_dir = Path("docs") / "investigations"
     if docs_inv_dir.exists():
@@ -2546,20 +2540,11 @@ def publish_all_command(
             slug = md_file.stem
             if slug == "index":
                 continue
-            try:
-                bundle = build_investigation_bundle(slug)
-                safe_slug = slug.replace("_", "-")
-                repo_id = f"{user}/inv-{safe_slug}"
-                url = upload_bundle(
-                    bundle, repo_id=repo_id, create_repo=create_repo, dry_run=dry_run
-                )
-                published.append(url)
-                if not dry_run:
-                    console.print(f"[green]Investigation {slug}:[/green] {url}")
-            except Exception as exc:  # noqa: BLE001
-                msg = f"Investigation {slug}: {exc}"
-                errors.append(msg)
-                console.print(f"[red]SKIP {msg}[/red]")
+            _try_publish(
+                f"Investigation {slug}",
+                f"inv-{slug.replace('_', '-')}",
+                lambda s=slug: build_investigation_bundle(s),
+            )
 
     console.print()
     if dry_run:

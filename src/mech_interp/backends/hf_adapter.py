@@ -91,14 +91,19 @@ def _get_module(model: Any, dotted_path: str) -> Any:
 # Helper: tokenize + forward pass
 # ---------------------------------------------------------------------------
 
+def _resolve_device(requested: str, torch: Any) -> str:
+    """Return the concrete device name, expanding ``"auto"`` to cuda/mps/cpu."""
+    if requested != "auto":
+        return requested
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 def _encode(tokenizer: Any, prompts: list[str], device: Any) -> Any:
-    _require_torch()
-    enc = tokenizer(
-        prompts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-    )
+    enc = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True)
     return {k: v.to(device) for k, v in enc.items()}
 
 
@@ -148,24 +153,11 @@ class HuggingFaceBackend:
         transformers = _require_transformers()
         torch = _require_torch()
 
-        # Resolve device.
-        if self.device == "auto":
-            if torch.cuda.is_available():
-                resolved_device = "cuda"
-            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                resolved_device = "mps"
-            else:
-                resolved_device = "cpu"
-        else:
-            resolved_device = self.device
-
-        load_kwargs: dict[str, Any] = {
-            "trust_remote_code": self.trust_remote_code,
-        }
+        resolved_device = _resolve_device(self.device, torch)
 
         try:
             self.model = transformers.AutoModelForCausalLM.from_pretrained(
-                self.model_name, **load_kwargs
+                self.model_name, trust_remote_code=self.trust_remote_code
             )
         except OSError as exc:
             # SECURITY: do NOT silently retry with trust_remote_code=True. If the

@@ -399,6 +399,39 @@ def build_steering_bundle(
     )
 
 
+def _parse_investigation_header(md_path: Path, slug: str) -> tuple[str, str]:
+    """Extract ``(title, description)`` from a markdown investigation doc.
+
+    Title is the first ``# heading``; description is the first non-heading,
+    non-frontmatter paragraph (truncated to 200 chars). Falls back to the slug.
+    """
+    title = slug.replace("_", " ").title()
+    description = f"Investigation: {title}"
+    try:
+        content = md_path.read_text(encoding="utf-8")
+    except OSError:
+        return title, description
+
+    title_found = False
+    in_frontmatter = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not title_found and stripped.startswith("# "):
+            title = stripped[2:].strip()
+            description = f"Investigation: {title}"
+            title_found = True
+            continue
+        if stripped == "---":
+            in_frontmatter = not in_frontmatter
+            continue
+        if in_frontmatter:
+            continue
+        if stripped and not stripped.startswith("#"):
+            description = stripped[:200]
+            break
+    return title, description
+
+
 def build_investigation_bundle(
     slug: str,
     *,
@@ -419,9 +452,6 @@ def build_investigation_bundle(
     """
     resolved_docs = docs_dir or (_PROJECT_ROOT / "docs")
     investigation_md = resolved_docs / "investigations" / f"{slug}.md"
-    publication_dir = resolved_docs / "publications" / f"{slug}_artifacts"
-    # Also try without _artifacts suffix
-    publication_dir_plain = resolved_docs / "publications" / slug
 
     if not investigation_md.exists():
         raise FileNotFoundError(
@@ -431,47 +461,23 @@ def build_investigation_bundle(
 
     local_paths: list[Path] = [investigation_md]
 
-    # Include publication artifacts directory contents if present
-    pub_dir: Path | None = None
-    if publication_dir.exists() and publication_dir.is_dir():
-        pub_dir = publication_dir
-    elif publication_dir_plain.exists() and publication_dir_plain.is_dir():
-        pub_dir = publication_dir_plain
-
+    # Include publication artifacts directory contents if present.
+    # Accept either ``<slug>_artifacts/`` or plain ``<slug>/``.
+    pub_dir: Path | None = next(
+        (
+            candidate
+            for candidate in (
+                resolved_docs / "publications" / f"{slug}_artifacts",
+                resolved_docs / "publications" / slug,
+            )
+            if candidate.exists() and candidate.is_dir()
+        ),
+        None,
+    )
     if pub_dir is not None:
-        for pub_file in sorted(pub_dir.iterdir()):
-            if pub_file.is_file():
-                local_paths.append(pub_file)
+        local_paths.extend(sorted(p for p in pub_dir.iterdir() if p.is_file()))
 
-    # Extract title from first # heading in markdown
-    title = slug.replace("_", " ").title()
-    try:
-        content = investigation_md.read_text(encoding="utf-8")
-        for line in content.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("# "):
-                title = stripped[2:].strip()
-                break
-    except OSError:
-        pass
-
-    # Short description: first non-heading, non-empty paragraph
-    description = f"Investigation: {title}"
-    try:
-        content = investigation_md.read_text(encoding="utf-8")
-        in_frontmatter = False
-        for line in content.splitlines():
-            stripped = line.strip()
-            if stripped == "---":
-                in_frontmatter = not in_frontmatter
-                continue
-            if in_frontmatter:
-                continue
-            if stripped and not stripped.startswith("#"):
-                description = stripped[:200]
-                break
-    except OSError:
-        pass
+    title, description = _parse_investigation_header(investigation_md, slug)
 
     metadata: dict[str, Any] = {
         "slug": slug,
@@ -568,48 +574,57 @@ def upload_bundle(
 # ---------------------------------------------------------------------------
 
 
+def _format_size(size_bytes: int) -> str:
+    """Human-readable byte size with one decimal place."""
+    if size_bytes >= 1_048_576:
+        return f"{size_bytes / 1_048_576:.1f} MB"
+    if size_bytes >= 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes} B"
+
+
+def _staged_name(bundle_kind: str, src_path: Path) -> str:
+    """Return the in-repo filename for *src_path*, normalising steering / investigation files."""
+    if bundle_kind == "steering":
+        if src_path.suffix == ".safetensors":
+            return "direction.safetensors"
+        if src_path.name.endswith(".safetensors.json"):
+            return "direction.safetensors.json"
+    elif bundle_kind == "investigation" and src_path.suffix == ".md":
+        return "investigation.md"
+    return src_path.name
+
+
 def _stage_bundle(bundle: HubArtifactBundle, repo_id: str, dest: Path) -> None:
     """Copy bundle files into a staging directory and write README + metadata."""
     import shutil
 
-    # Generate and write README
-    readme_text = _generate_readme(bundle, repo_id)
-    (dest / "README.md").write_text(readme_text, encoding="utf-8")
-
-    # Write bundle metadata sidecar
+    (dest / "README.md").write_text(_generate_readme(bundle, repo_id), encoding="utf-8")
     (dest / "bundle_metadata.json").write_text(
         json.dumps(bundle.metadata, indent=2, default=str),
         encoding="utf-8",
     )
 
-    # Copy artifact files, renaming safetensors for steering bundles
     for src_path in bundle.local_paths:
         if not src_path.exists():
             continue
-        if bundle.kind == "steering":
-            # Normalise filenames: foo_bar_l8.safetensors -> direction.safetensors
-            if src_path.suffix == ".safetensors":
-                dest_name = "direction.safetensors"
-            elif src_path.name.endswith(".safetensors.json"):
-                dest_name = "direction.safetensors.json"
-            else:
-                dest_name = src_path.name
-        elif bundle.kind == "investigation" and src_path.suffix == ".md":
-            dest_name = "investigation.md"
-        else:
-            dest_name = src_path.name
-        shutil.copy2(src_path, dest / dest_name)
+        shutil.copy2(src_path, dest / _staged_name(bundle.kind, src_path))
+
+
+_README_GENERATORS = {
+    "sae": _readme_sae,
+    "steering": _readme_steering,
+    "investigation": _readme_investigation,
+}
 
 
 def _generate_readme(bundle: HubArtifactBundle, repo_id: str) -> str:
     """Dispatch to the appropriate README generator for this bundle kind."""
-    if bundle.kind == "sae":
-        return _readme_sae(bundle.name, bundle.metadata, repo_id)
-    if bundle.kind == "steering":
-        return _readme_steering(bundle.name, bundle.metadata, repo_id)
-    if bundle.kind == "investigation":
-        return _readme_investigation(bundle.name, bundle.metadata, repo_id)
-    raise ValueError(f"Unknown bundle kind: {bundle.kind!r}")
+    try:
+        generator = _README_GENERATORS[bundle.kind]
+    except KeyError as exc:
+        raise ValueError(f"Unknown bundle kind: {bundle.kind!r}") from exc
+    return generator(bundle.name, bundle.metadata, repo_id)
 
 
 def _print_dry_run(bundle: HubArtifactBundle, repo_id: str, repo_url: str) -> None:
@@ -653,30 +668,12 @@ def _print_dry_run(bundle: HubArtifactBundle, repo_id: str, repo_url: str) -> No
     )
 
     for src_path in bundle.local_paths:
-        if bundle.kind == "steering":
-            if src_path.suffix == ".safetensors":
-                dest_name = "direction.safetensors"
-            elif src_path.name.endswith(".safetensors.json"):
-                dest_name = "direction.safetensors.json"
-            else:
-                dest_name = src_path.name
-        elif bundle.kind == "investigation" and src_path.suffix == ".md":
-            dest_name = "investigation.md"
-        else:
-            dest_name = src_path.name
-
-        size_str = "missing"
+        dest_name = _staged_name(bundle.kind, src_path)
         if src_path.exists():
-            size_bytes = src_path.stat().st_size
-            if size_bytes >= 1_048_576:
-                size_str = f"{size_bytes / 1_048_576:.1f} MB"
-            elif size_bytes >= 1024:
-                size_str = f"{size_bytes / 1024:.1f} KB"
-            else:
-                size_str = f"{size_bytes} B"
+            size_str = _format_size(src_path.stat().st_size)
         else:
+            size_str = "missing"
             dest_name = f"[red]{dest_name}[/red]"
-
         table.add_row(dest_name, str(src_path), size_str)
 
     console.print(table)
