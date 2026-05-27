@@ -14,6 +14,20 @@ EXPECTED_NOTEBOOKS = [
     "02_polysemanticity_sae.ipynb",
     "03_acdc_lite.ipynb",
     "04_agentic_loop.ipynb",
+    "05_research_walkthrough.ipynb",
+]
+
+# Section markers expected in the research-walkthrough notebook.
+WALKTHROUGH_SECTIONS = [
+    "Section 1",
+    "Section 2",
+    "Section 3",
+    "Section 4",
+    "Section 5",
+    "Section 6",
+    "Section 7",
+    "Section 8",
+    "Section 9",
 ]
 
 
@@ -76,3 +90,37 @@ def test_all_expected_notebooks_exist() -> None:
         if not (NOTEBOOKS_DIR / nb).exists()
     ]
     assert not missing, f"Missing notebooks: {missing}"
+
+
+def test_walkthrough_notebook_has_all_sections() -> None:
+    """05_research_walkthrough.ipynb must contain all nine section markers."""
+    nb_name = "05_research_walkthrough.ipynb"
+    path = NOTEBOOKS_DIR / nb_name
+    assert path.exists(), f"Notebook not found: {path}"
+    data = json.loads(path.read_text(encoding="utf-8"))
+
+    # Collect all source text from markdown cells.
+    all_source = ""
+    for cell in data.get("cells", []):
+        if cell.get("cell_type") == "markdown":
+            src = cell.get("source", "")
+            if isinstance(src, list):
+                all_source += "".join(src)
+            else:
+                all_source += src
+
+    missing_sections = [s for s in WALKTHROUGH_SECTIONS if s not in all_source]
+    assert not missing_sections, (
+        f"{nb_name}: missing section markers: {missing_sections}"
+    )
+
+
+def test_walkthrough_notebook_has_nine_or_more_code_cells() -> None:
+    """05_research_walkthrough.ipynb must have at least 9 code cells (one per section)."""
+    nb_name = "05_research_walkthrough.ipynb"
+    path = NOTEBOOKS_DIR / nb_name
+    data = json.loads(path.read_text(encoding="utf-8"))
+    code_cells = [c for c in data.get("cells", []) if c.get("cell_type") == "code"]
+    assert len(code_cells) >= 9, (
+        f"{nb_name}: expected ≥9 code cells, got {len(code_cells)}"
+    )
