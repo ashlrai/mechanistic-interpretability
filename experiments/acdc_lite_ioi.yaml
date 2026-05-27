@@ -1,14 +1,11 @@
-name: acdc-edge-ioi-gpt2
-family: acdc_edge
+name: acdc-lite-ioi-gpt2
+family: acdc_lite
 backend: transformerlens
 description: >-
-  Edge-level ACDC on GPT-2 small for the canonical Indirect Object Identification
-  (IOI) task (Wang et al., 2022). Uses 30 IOI prompt pairs from a templated corpus
-  covering all 12 names from the paper. Layers 5-11 cover all five canonical head
-  groups: induction (5.x), S-inhibition (7.3, 8.6), name-movers (9.6, 9.9, 10.0),
-  backup name-movers (10.7, 11.10), and duplicate-token (0.1, 3.0 are outside this
-  window but KL attribution from higher layers can still surface them).
-  Outputs: ranked edges + faithfulness metric for validation against canonical heads.
+  Node-level ACDC on GPT-2 small for the canonical IOI task (Wang et al., 2022).
+  Companion to acdc-edge-ioi-gpt2: same 30-prompt corpus, same layers 5-11,
+  but scores whole nodes (heads) rather than directed edges. Cheaper and faster;
+  used to compare node-level vs edge-level recall of the 12 canonical IOI heads.
   Full corpus saved to experiments/ioi_prompts.jsonl.
 parameters:
   model: gpt2-small
@@ -166,7 +163,6 @@ parameters:
   layers: [5, 6, 7, 8, 9, 10, 11]
   include_attention: true
   include_mlps: false
-  max_edges: 500
   tau: 0.01
   max_iterations: 10
   ablation_type: mean
