@@ -289,6 +289,93 @@ def analyze_sae_command(
     )
 
 
+@app.command("analyze-feature-splits")
+def analyze_feature_splits_command(
+    parent_run: Annotated[int, typer.Option("--parent-run", "-p", help="Parent SAE run ID.")],
+    child_run: Annotated[int, typer.Option("--child-run", "-c", help="Child (larger) SAE run ID.")],
+    top_k: int = typer.Option(3, "--top-k", help="Max child features per parent."),  # noqa: B008
+    min_cosine: float = typer.Option(  # noqa: B008
+        0.3, "--min-cosine", help="Minimum decoder cosine to include a child feature."
+    ),
+) -> None:
+    """Compute feature-splitting relationships between two SAE runs.
+
+    For each live feature in the PARENT SAE, finds the top-K features in the
+    CHILD (larger) SAE by decoder cosine similarity.  Writes feature_splits.json
+    to the child run's artifact directory.
+
+    Example::
+
+        mech analyze-feature-splits --parent-run 44 --child-run 46
+    """
+    from mech_interp.analysis.feature_splitting import compute_feature_split_analysis
+    from mech_interp.storage.artifacts import resolve_run_artifact_dir
+    from mech_interp.types import ExperimentRun, RunStatus, utc_now
+
+    config = load_config()
+
+    def _artifact_dir(run_id: int) -> Path:
+        # resolve_run_artifact_dir accepts an ExperimentRun; build a minimal stub.
+        run = ExperimentRun(
+            id=run_id,
+            spec_name="",
+            family="",
+            backend="",
+            status=RunStatus.SUCCEEDED,
+            artifact_dir=config.project.artifact_dir,
+            created_at=utc_now(),
+        )
+        return resolve_run_artifact_dir(run)
+
+    parent_dir = _artifact_dir(parent_run)
+    child_dir = _artifact_dir(child_run)
+
+    parent_weights = parent_dir / "sae_weights.safetensors"
+    child_weights = child_dir / "sae_weights.safetensors"
+    parent_analysis = parent_dir / "feature_analysis.json"
+    child_analysis = child_dir / "feature_analysis.json"
+
+    for label, p in [
+        ("parent weights", parent_weights),
+        ("child weights", child_weights),
+        ("parent feature_analysis", parent_analysis),
+        ("child feature_analysis", child_analysis),
+    ]:
+        if not p.exists():
+            console.print(f"[red]Missing {label}: {p}[/red]")
+            raise typer.Exit(code=1)
+
+    console.print(
+        f"Computing feature splits: run {parent_run} → run {child_run} "
+        f"(top_k={top_k}, min_cosine={min_cosine}) …"
+    )
+
+    result = compute_feature_split_analysis(
+        parent_weights,
+        child_weights,
+        parent_analysis,
+        child_analysis,
+        top_k_children=top_k,
+        min_cosine=min_cosine,
+    )
+
+    output_path = child_dir / "feature_splits.json"
+    output_path.write_text(
+        json.dumps(result.as_dict(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    dist = result.split_distribution
+    console.print(
+        f"[green]Done.[/green] Parent: {result.parent_n_features} features "
+        f"({result.parent_live_count} live) → Child: {result.child_n_features} features.\n"
+        f"  Mean split fidelity: [bold]{result.mean_split_fidelity:.4f}[/bold]\n"
+        f"  Split distribution (0/1/2/3+ children): "
+        f"{dist[0]}/{dist[1]}/{dist[2]}/{dist[3]}\n"
+        f"  Written: {output_path}"
+    )
+
+
 @app.command("experiments")
 def list_experiments(directory: str = "experiments") -> None:
     """List experiment specs discovered from YAML files."""
