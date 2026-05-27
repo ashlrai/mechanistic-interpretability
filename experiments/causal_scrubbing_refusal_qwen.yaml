@@ -60,7 +60,12 @@ parameters:
     - "blocks.9.attn.hook_z"
     - "blocks.10.attn.hook_z"
 
-  # Scrubbed sites — everything else at these layers.
+  # Scrubbed sites — everything else across all 28 Qwen layers.
+  # NOTE: Qwen2.5-1.5B-Instruct has 28 layers, not 12 like gpt2-small. We
+  # scrub the attention output of every non-protected layer (0-8, 11-27) and
+  # the residual-post of every non-protected layer for full coverage. Without
+  # this exhaustive scrub list the "everything else" claim of the audit is
+  # quietly false for layers 12-27.
   scrubbed_sites:
     - "blocks.0.attn.hook_z"
     - "blocks.1.attn.hook_z"
@@ -72,6 +77,22 @@ parameters:
     - "blocks.7.attn.hook_z"
     - "blocks.8.attn.hook_z"
     - "blocks.11.attn.hook_z"
+    - "blocks.12.attn.hook_z"
+    - "blocks.13.attn.hook_z"
+    - "blocks.14.attn.hook_z"
+    - "blocks.15.attn.hook_z"
+    - "blocks.16.attn.hook_z"
+    - "blocks.17.attn.hook_z"
+    - "blocks.18.attn.hook_z"
+    - "blocks.19.attn.hook_z"
+    - "blocks.20.attn.hook_z"
+    - "blocks.21.attn.hook_z"
+    - "blocks.22.attn.hook_z"
+    - "blocks.23.attn.hook_z"
+    - "blocks.24.attn.hook_z"
+    - "blocks.25.attn.hook_z"
+    - "blocks.26.attn.hook_z"
+    - "blocks.27.attn.hook_z"
     - "blocks.0.hook_resid_post"
     - "blocks.1.hook_resid_post"
     - "blocks.2.hook_resid_post"
@@ -82,6 +103,22 @@ parameters:
     - "blocks.7.hook_resid_post"
     - "blocks.8.hook_resid_post"
     - "blocks.11.hook_resid_post"
+    - "blocks.12.hook_resid_post"
+    - "blocks.13.hook_resid_post"
+    - "blocks.14.hook_resid_post"
+    - "blocks.15.hook_resid_post"
+    - "blocks.16.hook_resid_post"
+    - "blocks.17.hook_resid_post"
+    - "blocks.18.hook_resid_post"
+    - "blocks.19.hook_resid_post"
+    - "blocks.20.hook_resid_post"
+    - "blocks.21.hook_resid_post"
+    - "blocks.22.hook_resid_post"
+    - "blocks.23.hook_resid_post"
+    - "blocks.24.hook_resid_post"
+    - "blocks.25.hook_resid_post"
+    - "blocks.26.hook_resid_post"
+    - "blocks.27.hook_resid_post"
 
   artifact_policy:
     retain_activation_tensors: false
