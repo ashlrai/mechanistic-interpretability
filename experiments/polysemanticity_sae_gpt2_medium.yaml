@@ -1,0 +1,26 @@
+name: polysemanticity-sae-gpt2-medium
+family: polysemanticity_sae
+backend: transformerlens
+description: >-
+  Top-K SAE on gpt2-medium layer-12 residual stream (blocks.12.hook_resid_pre,
+  d_model=1024). Trained on 1000 documents from the Pile to demonstrate that the
+  platform can train a usable SAE at non-toy scale on a single 128 GB Apple Silicon
+  MBP. 2048 features with k=32 gives a ~64x expansion factor and roughly 3% feature
+  density, which is typical for mid-network SAEs on GPT-2 class models.
+parameters:
+  model: gpt2-medium
+  hook_site: blocks.12.hook_resid_pre
+  n_features: 2048
+  k: 32
+  epochs: 5
+  batch_size: 128
+  learning_rate: 0.001
+  seed: 42
+  device: cpu
+  corpus_path: data/prompts/pile-1k.jsonl
+  seq_len: 64
+  max_tokens: 8000
+  artifact_policy:
+    retain_weights: true
+    write_feature_analysis: true
+    top_prompts_per_feature: 5

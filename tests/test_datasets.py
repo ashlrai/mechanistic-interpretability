@@ -93,7 +93,7 @@ parameters:
     assert spec.parameters["dataset_sha256"] == "expected-digest"
 
 
-_CORPUS_FILES = {"openwebtext_sample.jsonl"}
+_CORPUS_FILES = {"openwebtext_sample.jsonl", "pile-1k.jsonl", "owt-1k.jsonl"}
 
 
 def test_curated_prompt_files_load() -> None:
