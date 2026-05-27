@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Mechanistic Interpretability Platform"
+version: 0.1.0-preview
+date-released: 2026-05-27
+license: MIT
+repository-code: "https://github.com/<your-github-username>/mechanistic-interpretability"
+authors:
+  - family-names: Wyatt
+    given-names: Mason
+    email: <author-email-please-update>
+abstract: >
+  A local Apple-Silicon research platform for mechanistic interpretability
+  experiments. Provides a family registry, YAML-driven experiment specs,
+  activation-capture pipelines, and reproducibility artifacts. Designed for
+  rapid hypothesis testing on consumer hardware (Apple MPS, 128 GB unified memory).
+keywords:
+  - mechanistic interpretability
+  - transformer circuits
+  - sparse autoencoders
+  - activation patching
+  - language models
+references:
+  - type: article
+    title: "SAE Replication Crisis: Preliminary Findings on Sparse Autoencoder Feature Stability"
+    authors:
+      - family-names: Wyatt
+        given-names: Mason
+    year: 2026
+    notes: "Draft / preliminary findings — see docs/investigations/"
+  - type: report
+    title: "Qwen Abliteration Audit: Refusal Direction Geometry in Qwen 2.5"
+    authors:
+      - family-names: Wyatt
+        given-names: Mason
+    year: 2026
+    notes: "Draft / preliminary findings — see docs/investigations/"
