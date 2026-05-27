@@ -1,0 +1,60 @@
+name: causal-scrubbing-ioi-name-movers
+family: causal_scrubbing
+backend: transformerlens
+description: >
+  Hypothesis: heads L9.H6, L9.H9, and L10.H0 (name-mover heads) implement name
+  copying in the indirect object identification task. We scrub all hook sites
+  except the output of those three heads and measure whether GPT-2 small still
+  produces the correct indirect-object token.  If the hypothesis is correct the
+  scrubbed faithfulness should be substantially above 0.
+parameters:
+  model: gpt2-small
+  device: cpu
+  seed: 42
+  # Three IOI equivalence classes, each with 2 prompts sharing the same
+  # subject/indirect-object name pair.  The equivalence label is the IO name —
+  # prompts within a class are "equivalent" w.r.t. the name-mover hypothesis.
+  prompts:
+    - id: "ioi-alice-1"
+      prompt: "When Mary and John went to the store, John gave a book to"
+      equivalence_label: "John-Mary"
+      target_position: -1
+    - id: "ioi-alice-2"
+      prompt: "When Mary and John went to the park, John handed the ball to"
+      equivalence_label: "John-Mary"
+      target_position: -1
+    - id: "ioi-bob-1"
+      prompt: "When Emma and Tom went to the store, Tom gave a gift to"
+      equivalence_label: "Tom-Emma"
+      target_position: -1
+    - id: "ioi-bob-2"
+      prompt: "When Emma and Tom went to the cafe, Tom passed the menu to"
+      equivalence_label: "Tom-Emma"
+      target_position: -1
+    - id: "ioi-carol-1"
+      prompt: "When Sarah and James went to the shop, James gave a note to"
+      equivalence_label: "James-Sarah"
+      target_position: -1
+    - id: "ioi-carol-2"
+      prompt: "When Sarah and James went to the park, James handed a coin to"
+      equivalence_label: "James-Sarah"
+      target_position: -1
+  # Name-mover heads are at the attention output (z) positions for layers 9 and 10.
+  protected_sites:
+    - "blocks.9.attn.hook_z"
+    - "blocks.10.attn.hook_z"
+  # Scrub all other layers' attention outputs and MLP outputs.
+  scrubbed_sites:
+    - "blocks.0.attn.hook_z"
+    - "blocks.1.attn.hook_z"
+    - "blocks.2.attn.hook_z"
+    - "blocks.3.attn.hook_z"
+    - "blocks.4.attn.hook_z"
+    - "blocks.5.attn.hook_z"
+    - "blocks.6.attn.hook_z"
+    - "blocks.7.attn.hook_z"
+    - "blocks.8.attn.hook_z"
+    - "blocks.11.attn.hook_z"
+  artifact_policy:
+    retain_activation_tensors: false
+    write_report: true
