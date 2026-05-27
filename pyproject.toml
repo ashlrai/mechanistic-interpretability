@@ -6,15 +6,15 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Mason Wyatt" }]
 dependencies = [
-    "fastapi>=0.111.0",
-    "httpx>=0.27.0",
-    "jinja2>=3.1.0",
-    "numpy>=1.26.0",
-    "pydantic>=2.7.0",
-    "pyyaml>=6.0.1",
-    "rich>=13.7.0",
-    "typer>=0.12.0",
-    "uvicorn>=0.30.0",
+    "fastapi>=0.111.0,<1.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    "jinja2>=3.1.0,<4.0.0",
+    "numpy>=1.26.0,<3.0.0",
+    "pydantic>=2.7.0,<3.0.0",
+    "pyyaml>=6.0.1,<7.0.0",
+    "rich>=13.7.0,<14.0.0",
+    "typer>=0.13.0,<1.0.0",
+    "uvicorn>=0.30.0,<1.0.0",
 ]
 
 [dependency-groups]
@@ -35,24 +35,32 @@ notebook = [
 ]
 
 [project.optional-dependencies]
+# Core ML / interpretability stack — loads model weights, requires ~2 GB.
 interp = [
-    "einops>=0.8.0",
-    "safetensors>=0.4.3",
-    "torch>=2.3.0",
-    "transformer-lens>=2.0.0",
-    "transformers>=4.42.0",
+    "einops>=0.8.0,<1.0.0",
+    "huggingface_hub>=0.23.0,<2.0.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "torch>=2.3.0,<3.0.0",
+    "transformer-lens>=2.0.0,<3.0.0",
+    "transformers>=4.42.0,<6.0.0",
 ]
+# NNsight tracing backend (optional; does not pull torch transitively here).
 nnsight = [
-    "nnsight>=0.4.0",
+    "nnsight>=0.4.0,<1.0.0",
 ]
+# Apple Silicon MLX backend.
 apple = [
-    "mlx>=0.18.0",
-    "mlx-lm>=0.18.0",
+    "mlx>=0.18.0,<1.0.0",
+    "mlx-lm>=0.18.0,<1.0.0",
 ]
-gradio = ["gradio>=4.0.0"]
+# Gradio web UI.
+gradio = ["gradio>=4.0.0,<6.0.0"]
+
 
 [project.scripts]
 mech = "mech_interp.cli:app"
+
+
 
 [build-system]
 requires = ["hatchling"]
@@ -90,6 +98,8 @@ module = [
     "pyarrow.*",
     "safetensors",
     "safetensors.*",
+    "sae_lens",
+    "sae_lens.*",
     "torch",
     "torch.*",
     "transformer_lens",
@@ -103,5 +113,24 @@ module = ["gradio", "gradio.*", "matplotlib", "matplotlib.*", "matplotlib.pyplot
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+# Modules that use bare np.ndarray (no type params) — pre-existing pattern;
+# surfaced by numpy >=2.x typed stubs.
+module = [
+    "mech_interp.storage.artifacts",
+    "mech_interp.backends.instrumented",
+    "mech_interp.experiments.sparse_probing",
+    "test_sparse_probing",
+    "test_cross_model_representation_probe",
+    "test_feature_splitting",
+]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
 module = ["test_hf_adapter", "test_hf_backend_e2e"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+# These modules use pytest.importorskip("torch") at module level; torch type
+# annotations are valid at runtime but mypy resolves the variable not the module.
+module = ["test_caa_steering", "test_refusal_direction"]
 ignore_errors = true

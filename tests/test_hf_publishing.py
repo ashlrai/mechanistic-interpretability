@@ -446,7 +446,7 @@ def test_generated_readme_has_yaml_frontmatter(tmp_path: Path) -> None:
             kind=kind,
             local_paths=[],
             metadata=metadata,
-            license=metadata.get("license", "research-only"),
+            license=str(metadata.get("license", "research-only")),
         )
         readme = _generate_readme(bundle, "testuser/test-repo")
 

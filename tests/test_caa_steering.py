@@ -14,12 +14,16 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import torch
 
-from mech_interp.experiments.caa_steering import (
+torch = pytest.importorskip("torch", reason="torch not installed; run with --extra interp")
+
+if TYPE_CHECKING:
+    import torch  # noqa: F811
+
+from mech_interp.experiments.caa_steering import (  # noqa: E402
     REFUSAL_PHRASES,
     CAASteeringExperiment,
     CAASteeringSpec,
@@ -30,8 +34,8 @@ from mech_interp.experiments.caa_steering import (
     _is_refusal,
     _result_notes,
 )
-from mech_interp.orchestration.runner import experiment_for_spec
-from mech_interp.types import ExperimentRun, ExperimentSpec, RunStatus, utc_now
+from mech_interp.orchestration.runner import experiment_for_spec  # noqa: E402
+from mech_interp.types import ExperimentRun, ExperimentSpec, RunStatus, utc_now  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
