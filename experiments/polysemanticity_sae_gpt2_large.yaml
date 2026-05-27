@@ -1,0 +1,25 @@
+name: polysemanticity-sae-gpt2-large
+family: polysemanticity_sae
+backend: transformerlens
+description: >
+  Top-K SAE on gpt2-large layer 18 residual stream (mid-network). Trained on a
+  1000-document subset of pile-1k. n_features=4096, k=64. Scoped to demonstrate
+  that the platform can run a real-corpus SAE on a 774M-parameter model
+  end-to-end within an overnight window.
+parameters:
+  model: gpt2-large
+  hook_site: blocks.18.hook_resid_pre
+  n_features: 4096
+  k: 64
+  epochs: 5
+  batch_size: 64
+  learning_rate: 0.0005
+  seed: 42
+  device: cpu
+  corpus_path: data/prompts/pile-1k.jsonl
+  seq_len: 64
+  max_tokens: 12000
+  artifact_policy:
+    retain_weights: true
+    write_feature_analysis: true
+    top_prompts_per_feature: 5
