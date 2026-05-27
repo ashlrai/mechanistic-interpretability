@@ -1,0 +1,34 @@
+name: logit-lens-factual-gpt2
+family: logit_lens
+backend: transformerlens
+description: >
+  Logit lens on gpt2-small with factual recall prompts.  Projects the residual
+  stream at every layer through the final layer-norm + unembedding to visualise
+  how the model's "current best guess" evolves layer by layer.  Reports
+  rank-of-correct, CE loss, and top-5 predicted tokens per layer.
+  Runs in ~10 s on CPU.
+
+parameters:
+  model: gpt2-small
+  device: cpu
+  seed: 42
+  target_position: -1
+  top_k: 5
+  mode: logit
+  prompts:
+    - id: capital-france
+      prompt: "The capital of France is"
+      correct_token: " Paris"
+      incorrect_token: " London"
+    - id: capital-italy
+      prompt: "The capital of Italy is"
+      correct_token: " Rome"
+      incorrect_token: " Paris"
+    - id: capital-germany
+      prompt: "The capital of Germany is"
+      correct_token: " Berlin"
+      incorrect_token: " Paris"
+    - id: planet-largest
+      prompt: "The largest planet in the Solar System is"
+      correct_token: " Jupiter"
+      incorrect_token: " Saturn"

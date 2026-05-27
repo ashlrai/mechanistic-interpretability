@@ -1245,8 +1245,6 @@ def _build_lens_sparklines(
     prompt_results: list[Any],
     top_k: int,
 ) -> list[dict[str, Any]]:
-    import math
-
     rows: list[dict[str, Any]] = []
     for pr in prompt_results:
         if not isinstance(pr, dict):
@@ -1278,7 +1276,7 @@ def _build_lens_sparklines(
 
 def _build_lens_topk_rows(
     prompt_results: list[Any],
-    top_k: int,
+    top_k: int,  # noqa: ARG001
 ) -> list[dict[str, Any]]:
     """Build per-prompt top-K tables for layers 3, 6, 9, and final."""
     rows: list[dict[str, Any]] = []

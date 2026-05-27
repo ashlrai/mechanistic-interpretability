@@ -1438,3 +1438,80 @@ def sweep_report_command(
         f"  JSON: [bold]{json_path}[/bold]\n"
         f"  MD:   [bold]{md_path}[/bold]"
     )
+
+
+@app.command("calibrate-tuned-lens")
+def calibrate_tuned_lens(
+    model: Annotated[
+        str, typer.Option("--model", help="TransformerLens model name")
+    ] = "gpt2-small",
+    prompts_path: Annotated[
+        str, typer.Option("--prompts", help="JSONL file of prompts")
+    ] = "data/prompts/factual.jsonl",
+    epochs: Annotated[
+        int, typer.Option("--epochs", help="Training epochs")
+    ] = 50,
+    lr: Annotated[
+        float, typer.Option("--lr", help="Adam learning rate")
+    ] = 1e-3,
+    output: Annotated[
+        str, typer.Option("--output", help="Output safetensors path")
+    ] = "data/tuned-lens/gpt2-small.safetensors",
+    device: Annotated[
+        str, typer.Option("--device", help="Torch device")
+    ] = "cpu",
+    seed: Annotated[
+        int, typer.Option("--seed", help="Random seed")
+    ] = 42,
+) -> None:
+    """Train per-layer tuned-lens affine transforms and save to a safetensors file.
+
+    Each layer transform is initialised to identity and optimised with Adam to
+    minimise the KL divergence between the projected distribution at that layer
+    and the final-layer distribution (soft labels).
+    """
+    try:
+        from mech_interp.analysis.tuned_lens_calibration import (
+            load_prompts_from_jsonl,
+            save_tuned_lens,
+            train_tuned_lens,
+        )
+        from mech_interp.backends import create_instrumented_backend
+    except ImportError as exc:
+        console.print(f"[red]Missing dependencies: {exc}[/red]")
+        console.print(
+            "Run [bold]uv sync --extra interp[/bold] to install torch + transformer-lens."
+        )
+        raise typer.Exit(code=1) from exc
+
+    prompts_file = Path(prompts_path)
+    if not prompts_file.is_file():
+        console.print(f"[red]Prompts file not found: {prompts_file}[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(f"Loading prompts from [bold]{prompts_file}[/bold]...")
+    training_prompts = load_prompts_from_jsonl(prompts_file)
+    if not training_prompts:
+        console.print("[red]No prompts found in the JSONL file.[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"  {len(training_prompts)} prompt(s) loaded.")
+
+    console.print(f"Loading model [bold]{model}[/bold] on {device}...")
+    backend = create_instrumented_backend(
+        "transformerlens", {"model_name": model, "device": device}
+    )
+    backend.load()
+    tl_model = getattr(backend, "model", None)
+    if tl_model is None:
+        console.print("[red]Failed to load model.[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(f"Training tuned-lens transforms ({epochs} epochs, lr={lr}, seed={seed})...")
+    transforms = train_tuned_lens(
+        tl_model, training_prompts, epochs=epochs, lr=lr, seed=seed, device=device
+    )
+
+    output_path = Path(output)
+    saved = save_tuned_lens(transforms, output_path)
+    console.print(f"[green]Saved tuned-lens transforms to[/green] [bold]{saved}[/bold]")
+    console.print(f"  Layers trained: {sorted(transforms.keys())}")

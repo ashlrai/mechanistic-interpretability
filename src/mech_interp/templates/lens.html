@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Logit Lens — Run {{ run.id }}</h1>
+<p class="muted">{{ run.spec_name }} / {{ run.family }} &nbsp;&bull;&nbsp; <a href="/runs/{{ run.id }}">back to run detail</a></p>
+
+{% if not lens_summary %}
+<p class="muted">No lens_summary.json artifact found for this run.</p>
+{% else %}
+
+<section>
+  <div class="status-grid">
+    <div class="status-card"><span class="muted">Layers</span><strong>{{ lens_summary.n_layers }}</strong></div>
+    <div class="status-card"><span class="muted">Prompts</span><strong>{{ prompt_results|length }}</strong></div>
+    <div class="status-card"><span class="muted">Final mean rank</span><strong>{{ "%.1f"|format(metrics.final_mean_rank) if metrics else "&mdash;"|safe }}</strong></div>
+    <div class="status-card"><span class="muted">First top-K layer</span><strong>{{ metrics.first_top_k_layer|int if metrics else "&mdash;"|safe }}</strong></div>
+  </div>
+</section>
+
+<section>
+  <h2>CE-loss curve (mean across prompts)</h2>
+  {% if ce_svg %}
+  {{ ce_svg|safe }}
+  {% else %}
+  <p class="muted">No CE-loss data.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Rank-of-correct curve (mean across prompts)</h2>
+  {% if rank_svg %}
+  {{ rank_svg|safe }}
+  {% else %}
+  <p class="muted">No rank data.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Per-prompt sparklines (rank-of-correct)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Prompt</th>
+        <th>Correct token</th>
+        <th>Rank across layers (L0 → final)</th>
+        <th>First top-K layer</th>
+        <th>Final rank</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in prompt_sparklines %}
+      <tr>
+        <td>{{ row.id }}</td>
+        <td><code>{{ row.correct_token }}</code></td>
+        <td><span style="font-family:monospace;letter-spacing:0">{{ row.sparkline }}</span></td>
+        <td>{{ row.first_top_k if row.first_top_k is not none else "&mdash;"|safe }}</td>
+        <td>{{ row.final_rank }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Top-K token predictions at selected layers</h2>
+  {% for row in topk_rows %}
+  <h3>{{ row.prompt_id }} &mdash; <code>{{ row.prompt }}</code></h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Layer</th>
+        {% for rank in range(top_k) %}<th>Rank {{ rank + 1 }}</th>{% endfor %}
+        <th>Rank of correct</th>
+        <th>CE loss</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for layer_row in row.layers %}
+      <tr>
+        <td>{{ layer_row.layer }}</td>
+        {% for pred in layer_row.top_k %}
+        <td><code>{{ pred.token }}</code></td>
+        {% endfor %}
+        <td>{{ layer_row.rank_correct }}</td>
+        <td>{{ "%.3f"|format(layer_row.ce_loss) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</section>
+
+{% endif %}
+{% endblock %}
