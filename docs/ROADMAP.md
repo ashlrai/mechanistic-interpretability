@@ -5,6 +5,10 @@ interpretability lab. Keep each stage runnable before moving to the next.
 
 ## Stage 1: Research Spine — DONE
 
+- ✅ `mech demo` — one-command first-experiment quickstart.  Runs DLA + logit
+  lens + circuit patching on gpt2-small, prints a Rich-rendered narrative
+  summary, and saves a 3-panel `summary.png`.  Completes in <5 minutes on a
+  machine with gpt2-small cached.
 - ✅ Validate experiment YAML before execution.
 - ✅ Persist resolved specs, configs, run status, metrics, and artifact manifests.
 - ✅ Add provider health checks for Ollama and LM Studio.

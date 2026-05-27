@@ -54,6 +54,52 @@ Core packages:
 └── tests/                   # Smoke and unit tests
 ```
 
+## Getting started
+
+The fastest path to a real mech-interp result is `mech demo`.  It runs three
+narrative-coherent experiments on **gpt2-small** (already cached for most
+TransformerLens users), prints a Rich-rendered summary, and saves a 3-panel
+figure — all in under 5 minutes on a MacBook Pro:
+
+```bash
+uv sync --group dev --extra interp
+uv run --group dev --extra interp mech demo
+```
+
+Example output:
+
+```
+mech demo — running 3 experiments on gpt2-small …
+Experiments complete in 19.2s
+
+╭──────────────────── mech demo — gpt2-small factual recall ────────────────────╮
+│  Experiment               Finding                                    Value     │
+│  Direct Logit Attribution Top writing component: L0_mlp            +2.841     │
+│  Logit Lens               rank drops over 12 layers (never top-5)  rank 37    │
+│  Circuit Patching         Top causal site: L8·resid_pre            93% recov. │
+╰───────────────────────────────────────────────────────────────────────────────╯
+
+What just happened:
+  1. DLA decomposed every component's contribution to the final logit in a single forward pass.
+  2. Logit Lens revealed how the model's best guess evolves layer by layer.
+  3. Circuit Patching causally verified the top DLA component via activation patching.
+  4. Together: something writes it, somewhere it commits, patching confirms causality.
+  5. All results are deterministic (seed=42) — re-run to confirm.
+
+Full walkthrough: notebooks/05_research_walkthrough.ipynb
+Saved chart:      artifacts/demo/<timestamp>/summary.png
+```
+
+Pass `--output-dir` to control where artifacts land, or `--skip-chart` to skip
+the matplotlib figure:
+
+```bash
+uv run --group dev --extra interp mech demo --output-dir /tmp/my-demo
+uv run --group dev --extra interp mech demo --skip-chart
+```
+
+---
+
 ## Setup
 
 Install `uv` if needed, then create the local development environment:

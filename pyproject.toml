@@ -82,9 +82,5 @@ module = ["mlx_lm", "nnsight", "transformer_lens"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["matplotlib", "matplotlib.pyplot"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["gradio", "gradio.*", "matplotlib", "matplotlib.*"]
+module = ["gradio", "gradio.*", "matplotlib", "matplotlib.*", "matplotlib.pyplot"]
 ignore_missing_imports = true

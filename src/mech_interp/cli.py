@@ -77,6 +77,79 @@ def show_config() -> None:
     console.print_json(json.dumps(config.model_dump(mode="json"), indent=2))
 
 
+@app.command("demo")
+def demo_command(
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            "-o",
+            help="Directory for demo artifacts.  Default: artifacts/demo/<UTC timestamp>.",
+        ),
+    ] = None,
+    skip_chart: bool = typer.Option(  # noqa: B008
+        False,
+        "--skip-chart",
+        help="Skip matplotlib chart generation (useful when matplotlib is not installed).",
+    ),
+) -> None:
+    """One-command first-experiment demo: DLA + logit lens + circuit patching on gpt2-small.
+
+    Produces a 3-panel summary chart and a rich-rendered narrative.
+    Runs end-to-end in <5 minutes on a machine with gpt2-small already cached.
+    """
+    import time
+
+    from mech_interp.demo import (
+        render_demo_chart,
+        render_demo_markdown,
+        render_demo_summary,
+        run_demo_experiments,
+    )
+
+    if output_dir is None:
+        ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        output_dir = Path("artifacts") / "demo" / ts
+
+    console.print(
+        f"[bold #176b87]mech demo[/bold #176b87] — "
+        f"running 3 experiments on gpt2-small …  "
+        f"(output: {output_dir})"
+    )
+    t0 = time.monotonic()
+
+    result = run_demo_experiments(output_dir)
+
+    elapsed = time.monotonic() - t0
+    console.print(f"[dim]Experiments complete in {elapsed:.1f}s[/dim]")
+    console.print()
+
+    render_demo_summary(result, console)
+
+    # Write summary.md regardless
+    md_path = output_dir / "summary.md"
+    md_path.write_text(render_demo_markdown(result), encoding="utf-8")
+    console.print(f"[dim]Markdown summary:[/dim] [bold]{md_path}[/bold]")
+
+    # Attempt chart (gracefully skips if matplotlib not installed)
+    if not skip_chart:
+        chart_path = output_dir / "summary.png"
+        try:
+            render_demo_chart(result, chart_path)
+            if chart_path.exists():
+                console.print(f"[dim]Chart saved:[/dim]   [bold]{chart_path}[/bold]")
+            else:
+                console.print(
+                    "[dim]Chart skipped — matplotlib not available "
+                    "(install the notebook group: `uv sync --group notebook --extra interp`).[/dim]"
+                )
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"[yellow]Chart generation failed:[/yellow] {exc}")
+
+    if result.errors:
+        raise typer.Exit(code=1)
+
+
 @app.command("download-corpus")
 def download_corpus_command(
     name: Annotated[
