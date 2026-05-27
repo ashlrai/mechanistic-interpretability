@@ -143,6 +143,15 @@ def experiment_for_spec(spec: ExperimentSpec) -> Experiment:
         from mech_interp.experiments.sparse_probing import SparseProbingExperiment
         return SparseProbingExperiment()
         return CrosscoderExperiment()
+    if spec.family == "caa_steering":
+        from mech_interp.experiments.caa_steering import CAASteeringExperiment
+        return CAASteeringExperiment()
+    if spec.family == "logit_lens":
+        from mech_interp.experiments.logit_lens import LogitLensExperiment
+        return LogitLensExperiment()
+    if spec.family == "causal_scrubbing":
+        from mech_interp.experiments.causal_scrubbing import CausalScrubbingExperiment
+        return CausalScrubbingExperiment()
     if spec.parameters.get("runner") == "activation_capture":
         return ActivationCaptureExperiment()
     if spec.parameters.get("runner") == "transformerlens_smoke":

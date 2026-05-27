@@ -313,6 +313,116 @@ def create_app(config: AppConfig, experiment_dir: str = "experiments") -> FastAP
             },
         )
 
+    @app.get("/runs/{run_id}/lens", response_class=HTMLResponse)
+    def lens_page(request: Request, run_id: int) -> HTMLResponse:
+        db = store()
+        run = next((item for item in db.list_runs(limit=500) if item.id == run_id), None)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if run.family != "logit_lens":
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Run {run_id} is family '{run.family}', not 'logit_lens'; "
+                    "lens view is only available for logit_lens runs."
+                ),
+            )
+        result = db.get_result(run_id)
+        run_dir = config.project.artifact_dir / f"run-{run_id:06d}"
+        summary_path = _find_artifact_path(
+            "lens_summary", result, run_dir / "lens_summary.json"
+        )
+        results_path = _find_artifact_path(
+            "lens_results", result, run_dir / "lens_results.json"
+        )
+        lens_summary = _read_json_artifact(
+            str(summary_path) if summary_path else None
+        )
+        lens_results_raw = _read_json_artifact(
+            str(results_path) if results_path else None
+        )
+        prompt_results = (
+            lens_results_raw if isinstance(lens_results_raw, list) else []
+        )
+        # If stored as {"value": [...]} fallback
+        if isinstance(lens_results_raw, dict) and isinstance(lens_results_raw.get("value"), list):
+            prompt_results = lens_results_raw["value"]
+
+        metrics = result.metrics if result else {}
+        top_k = int(metrics.get("n_layers", 0) and 5 or 5)
+        # Parse top_k from result artifacts spec
+        spec_data = db.get_run_spec(run_id) or {}
+        if isinstance(spec_data, dict):
+            top_k = int(spec_data.get("parameters", {}).get("top_k", 5))
+
+        ce_svg = _build_lens_curve_svg(
+            (lens_summary or {}).get("mean_ce_by_layer", []),
+            label="CE loss",
+            color="#e63946",
+        )
+        rank_svg = _build_lens_curve_svg(
+            (lens_summary or {}).get("mean_rank_by_layer", []),
+            label="Mean rank",
+            color="#457b9d",
+        )
+        prompt_sparklines = _build_lens_sparklines(prompt_results, top_k)
+        topk_rows = _build_lens_topk_rows(prompt_results, top_k)
+
+        return templates.TemplateResponse(
+            request,
+            "lens.html",
+            {
+                "run": run,
+                "lens_summary": lens_summary,
+                "prompt_results": prompt_results,
+                "metrics": metrics,
+                "top_k": top_k,
+                "ce_svg": ce_svg,
+                "rank_svg": rank_svg,
+                "prompt_sparklines": prompt_sparklines,
+                "topk_rows": topk_rows,
+            },
+        )
+
+    @app.get("/runs/{run_id}/caa", response_class=HTMLResponse)
+    def caa_steering(request: Request, run_id: int) -> HTMLResponse:
+        db = store()
+        run = next((item for item in db.list_runs(limit=500) if item.id == run_id), None)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if run.family != "caa_steering":
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Run {run_id} is family '{run.family}', not 'caa_steering'; "
+                    "CAA steering view is only available for caa_steering runs."
+                ),
+            )
+        result = db.get_result(run_id)
+        run_dir = config.project.artifact_dir / f"run-{run_id:06d}"
+        eff_path = _find_artifact_path(
+            "layer_effectiveness", result, run_dir / "layer_effectiveness.json"
+        )
+        ir_path = _find_artifact_path(
+            "intervention_results", result, run_dir / "intervention_results.json"
+        )
+        eff_json = _read_json_artifact(str(eff_path) if eff_path else None)
+        ir_json = _read_json_artifact(str(ir_path) if ir_path else None)
+        summary, heatmap_data, best_table, sample_generations = _parse_caa_steering(
+            eff_json, ir_json
+        )
+        return templates.TemplateResponse(
+            request,
+            "caa_steering.html",
+            {
+                "run": run,
+                "summary": summary,
+                "heatmap_data": heatmap_data,
+                "best_table": best_table,
+                "sample_generations": sample_generations,
+            },
+        )
+
     @app.get("/runs/{run_id}/refusal", response_class=HTMLResponse)
     def refusal_direction(request: Request, run_id: int) -> HTMLResponse:
         db = store()
@@ -720,6 +830,93 @@ def _read_environment(
     return payload if isinstance(payload, dict) else None
 
 
+def _parse_caa_steering(
+    eff_json: dict[str, Any] | None,
+    ir_json: dict[str, Any] | None,
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Parse layer_effectiveness.json + intervention_results.json for CAA view.
+
+    Returns:
+        summary:  header-card fields
+        heatmap_data: list of {layer, coefficient, refusal_rate} for SVG heatmap
+        best_table:   per-layer best-coefficient rows (sortable table)
+        sample_generations: per-test-prompt generations at the best (layer, coeff)
+    """
+    summary: dict[str, Any] = {
+        "model": (eff_json or {}).get("model", ""),
+        "hook_site_template": (eff_json or {}).get("hook_site_template", ""),
+        "hook_layers": (eff_json or {}).get("hook_layers", []),
+        "hidden_dim": int((eff_json or {}).get("hidden_dim", 0)),
+        "contrastive_pair_count": int((eff_json or {}).get("contrastive_pair_count", 0)),
+    }
+
+    layers_data: dict[str, Any] = (eff_json or {}).get("layers", {})
+    layers_sorted = sorted(int(k) for k in layers_data)
+
+    # Build heatmap_data: one row per (layer, coeff)
+    heatmap_data: list[dict[str, Any]] = []
+    for layer in layers_sorted:
+        sweep = layers_data[str(layer)].get("sweep", [])
+        for pt in sweep:
+            heatmap_data.append({
+                "layer": layer,
+                "coefficient": float(pt.get("coefficient", 0.0)),
+                "refusal_rate": float(pt.get("refusal_rate", 0.0)),
+            })
+
+    # Build best_table: one row per layer
+    best_table: list[dict[str, Any]] = []
+    for layer in layers_sorted:
+        ld = layers_data[str(layer)]
+        best_table.append({
+            "layer": layer,
+            "extraction_quality": float(ld.get("extraction_quality", 0.0)),
+            "best_coefficient": float(ld.get("best_coefficient", 0.0)),
+            "best_refusal_rate_shift": float(ld.get("best_refusal_rate_shift", 0.0)),
+            "baseline_refusal_rate": float(ld.get("baseline_refusal_rate", 0.0)),
+        })
+    # Sort by best_refusal_rate_shift descending by default
+    best_table.sort(key=lambda r: r["best_refusal_rate_shift"], reverse=True)
+
+    # Build sample_generations: for each layer's best coeff, collect its generations
+    sample_generations: list[dict[str, Any]] = []
+    if ir_json and isinstance(ir_json.get("results"), list):
+        # Build lookup: layer -> best_coeff
+        best_coeff_by_layer: dict[int, float] = {
+            layer: float(layers_data[str(layer)].get("best_coefficient", 0.0))
+            for layer in layers_sorted
+        }
+        for layer_entry in ir_json["results"]:
+            if not isinstance(layer_entry, dict):
+                continue
+            layer = int(layer_entry.get("layer", -1))
+            best_coeff = best_coeff_by_layer.get(layer)
+            for coeff_entry in layer_entry.get("results", []):
+                if not isinstance(coeff_entry, dict):
+                    continue
+                if float(coeff_entry.get("coefficient", float("nan"))) != best_coeff:
+                    continue
+                for prompt_row in coeff_entry.get("prompts", []):
+                    if not isinstance(prompt_row, dict):
+                        continue
+                    gen_text = str(prompt_row.get("generation", ""))
+                    sample_generations.append({
+                        "layer": layer,
+                        "coefficient": best_coeff,
+                        "prompt": str(prompt_row.get("prompt", "")),
+                        "generation_snippet": gen_text[:200],
+                        "generation_full": gen_text,
+                        "is_refusal": bool(prompt_row.get("is_refusal", False)),
+                    })
+
+    return summary, heatmap_data, best_table, sample_generations
+
+
 def _parse_refusal_direction(
     direction_json: dict[str, Any] | None,
     intervention_json: dict[str, Any] | None,
@@ -986,6 +1183,129 @@ def _parse_crosscoder_features(
         "hook_site": hook_site,
     }
     return normalised, stats
+
+
+_LENS_SPARKLINE = " ▁▂▃▄▅▆▇█"
+
+
+def _build_lens_curve_svg(
+    values: list[float],
+    *,
+    label: str = "",
+    color: str = "#457b9d",
+    width: int = 600,
+    height: int = 80,
+) -> str:
+    """Build a simple SVG polyline chart for a per-layer scalar series."""
+    import math
+
+    if not values:
+        return ""
+    finite = [v for v in values if not math.isnan(v)]
+    if not finite:
+        return ""
+    vmin, vmax = min(finite), max(finite)
+    span = vmax - vmin if vmax > vmin else 1.0
+    n = len(values)
+    pad = 10
+    usable_w = width - 2 * pad
+    usable_h = height - 2 * pad
+    pts: list[str] = []
+    for i, v in enumerate(values):
+        x = pad + (i / max(n - 1, 1)) * usable_w
+        norm = (v - vmin) / span if not math.isnan(v) else 0.5
+        y = pad + (1.0 - norm) * usable_h
+        pts.append(f"{x:.1f},{y:.1f}")
+    polyline = " ".join(pts)
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'style="display:block;overflow:visible">'
+        f'<polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="2"/>'
+        f'<text x="{pad}" y="{height - 2}" font-size="10" fill="#888">{label}</text>'
+        f"</svg>"
+    )
+
+
+def _spark_char(rank: float, top_k: int) -> str:
+    """Map a rank value to a sparkline char; lower rank = brighter char."""
+    import math
+
+    if math.isnan(rank):
+        return "?"
+    # Clamp rank to [1, 50] range for display
+    clamped = max(1.0, min(rank, 50.0))
+    # Normalise 0..1 where 1 = worst (rank=50)
+    norm = (clamped - 1.0) / 49.0
+    # Invert so rank=1 → last (bright) char, rank=50 → first (dim) char
+    idx = int((1.0 - norm) * (len(_LENS_SPARKLINE) - 1))
+    return _LENS_SPARKLINE[idx]
+
+
+def _build_lens_sparklines(
+    prompt_results: list[Any],
+    top_k: int,
+) -> list[dict[str, Any]]:
+    import math
+
+    rows: list[dict[str, Any]] = []
+    for pr in prompt_results:
+        if not isinstance(pr, dict):
+            continue
+        layers: list[dict[str, Any]] = pr.get("layers", [])
+        spark = "".join(
+            _spark_char(float(rec.get("rank_correct", 50)), top_k) for rec in layers
+        )
+        first_top_k: int | None = next(
+            (
+                int(rec["layer"])
+                for rec in layers
+                if int(rec.get("rank_correct", 999)) <= top_k
+            ),
+            None,
+        )
+        final_rank = int(layers[-1]["rank_correct"]) if layers else 0
+        rows.append(
+            {
+                "id": pr.get("id") or pr.get("prompt", "")[:30],
+                "correct_token": pr.get("correct_token", ""),
+                "sparkline": spark,
+                "first_top_k": first_top_k,
+                "final_rank": final_rank,
+            }
+        )
+    return rows
+
+
+def _build_lens_topk_rows(
+    prompt_results: list[Any],
+    top_k: int,
+) -> list[dict[str, Any]]:
+    """Build per-prompt top-K tables for layers 3, 6, 9, and final."""
+    rows: list[dict[str, Any]] = []
+    for pr in prompt_results:
+        if not isinstance(pr, dict):
+            continue
+        layers: list[dict[str, Any]] = pr.get("layers", [])
+        if not layers:
+            continue
+        n = len(layers)
+        # Select layers 3, 6, 9 (if present) + final
+        target_layers = [i for i in [3, 6, 9] if i < n] + [n - 1]
+        # Deduplicate while preserving order
+        seen: set[int] = set()
+        selected: list[dict[str, Any]] = []
+        for idx in target_layers:
+            if idx not in seen:
+                seen.add(idx)
+                selected.append(layers[idx])
+        rows.append(
+            {
+                "prompt_id": pr.get("id") or pr.get("prompt", "")[:30],
+                "prompt": pr.get("prompt", ""),
+                "layers": selected,
+            }
+        )
+    return rows
 
 
 def _load_feature_labels(labels_path: Path) -> dict[str, str]:

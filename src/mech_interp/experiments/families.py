@@ -17,6 +17,9 @@ class ExperimentFamily(StrEnum):
     SPARSE_PROBING = "sparse_probing"
     ATTRIBUTION_PATCHING = "attribution_patching"
     CROSSCODER = "crosscoder"
+    CAA_STEERING = "caa_steering"
+    LOGIT_LENS = "logit_lens"
+    CAUSAL_SCRUBBING = "causal_scrubbing"
 
 
 class ExperimentBackend(StrEnum):

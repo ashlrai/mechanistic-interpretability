@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>CAA Steering &mdash; Run {{ run.id }}</h1>
+<p class="muted">{{ run.spec_name }} / {{ run.family }} &nbsp;&bull;&nbsp; <a href="/runs/{{ run.id }}">back to run detail</a></p>
+
+<section>
+  <div class="status-grid">
+    <div class="status-card"><span class="muted">Model</span><strong style="font-size:1rem;word-break:break-all">{{ summary.model or "&mdash;"|safe }}</strong></div>
+    <div class="status-card"><span class="muted">Hook site template</span><strong style="font-size:0.85rem;word-break:break-all">{{ summary.hook_site_template or "&mdash;"|safe }}</strong></div>
+    <div class="status-card"><span class="muted">Layers swept</span><strong>{{ summary.hook_layers | join(", ") }}</strong></div>
+    <div class="status-card"><span class="muted">Hidden dim</span><strong>{{ summary.hidden_dim }}</strong></div>
+    <div class="status-card"><span class="muted">Contrastive pairs</span><strong>{{ summary.contrastive_pair_count }}</strong></div>
+  </div>
+</section>
+
+{% if heatmap_data %}
+{% set all_coeffs = heatmap_data | map(attribute='coefficient') | list | unique | sort %}
+{% set all_layers = heatmap_data | map(attribute='layer') | list | unique | sort %}
+{% set n_coeffs = all_coeffs | length %}
+{% set n_layers = all_layers | length %}
+{# Build a lookup: "layer_coeff" -> refusal_rate #}
+{% set cell_map = {} %}
+{% for pt in heatmap_data %}
+  {% set _ = cell_map.update({(pt.layer | string) ~ "_" ~ (pt.coefficient | string): pt.refusal_rate}) %}
+{% endfor %}
+
+<section>
+  <h2>Layer &times; Coefficient Effectiveness Heatmap</h2>
+  <p class="muted">Cell colour = refusal rate (white=0, dark blue=1). Rows = layers, columns = steering coefficients.</p>
+  {% set cell_w = 52 %}
+  {% set cell_h = 36 %}
+  {% set label_w = 40 %}
+  {% set label_h = 24 %}
+  {% set pad = 4 %}
+  {% set svg_w = label_w + n_coeffs * cell_w + pad %}
+  {% set svg_h = label_h + n_layers * cell_h + pad %}
+  <div style="overflow-x:auto">
+    <svg width="{{ svg_w }}" height="{{ svg_h }}" style="display:block;font-family:monospace">
+      {# Column header labels (coefficients) #}
+      {% for coeff in all_coeffs %}
+      <text
+        x="{{ label_w + loop.index0 * cell_w + cell_w // 2 }}"
+        y="{{ label_h - 4 }}"
+        text-anchor="middle"
+        font-size="10"
+        fill="#44505a"
+      >{{ "%+.1f"|format(coeff) }}</text>
+      {% endfor %}
+
+      {# Row label + cells #}
+      {% for layer in all_layers %}
+      {% set row_y = label_h + loop.index0 * cell_h %}
+      <text
+        x="{{ label_w - 4 }}"
+        y="{{ row_y + cell_h // 2 + 4 }}"
+        text-anchor="end"
+        font-size="10"
+        fill="#44505a"
+      >L{{ layer }}</text>
+      {% for coeff in all_coeffs %}
+        {% set key = (layer | string) ~ "_" ~ (coeff | string) %}
+        {% set rate = cell_map.get(key, 0.0) %}
+        {# Blue channel: 174 - 130*rate  (light blue→dark navy) #}
+        {% set r_val = (230 - 210 * rate) | round | int %}
+        {% set g_val = (240 - 210 * rate) | round | int %}
+        {% set b_val = (255 - 100 * rate) | round | int %}
+        {% set cell_x = label_w + loop.index0 * cell_w %}
+        <rect
+          x="{{ cell_x }}" y="{{ row_y }}"
+          width="{{ cell_w - 2 }}" height="{{ cell_h - 2 }}"
+          rx="3"
+          fill="rgb({{ r_val }},{{ g_val }},{{ b_val }})"
+          stroke="#d0d7de"
+          stroke-width="1"
+        >
+          <title>Layer {{ layer }}, coeff {{ "%+.1f"|format(coeff) }}: refusal_rate={{ "%.2f"|format(rate) }}</title>
+        </rect>
+        <text
+          x="{{ cell_x + (cell_w - 2) // 2 }}"
+          y="{{ row_y + (cell_h - 2) // 2 + 4 }}"
+          text-anchor="middle"
+          font-size="9"
+          fill="{{ '#ffffff' if rate > 0.55 else '#333333' }}"
+        >{{ "%.2f"|format(rate) }}</text>
+      {% endfor %}
+      {% endfor %}
+    </svg>
+  </div>
+</section>
+{% endif %}
+
+{% if best_table %}
+<section>
+  <h2>Best Coefficient per Layer</h2>
+  <p class="muted">Sorted by refusal-rate shift (descending). Click column headers to re-sort.</p>
+  <table id="best-table">
+    <thead>
+      <tr>
+        <th onclick="sortBestTable(0)" style="cursor:pointer">Layer &uarr;&darr;</th>
+        <th onclick="sortBestTable(1)" style="cursor:pointer">Extraction Quality &uarr;&darr;</th>
+        <th onclick="sortBestTable(2)" style="cursor:pointer">Best Coeff &uarr;&darr;</th>
+        <th onclick="sortBestTable(3)" style="cursor:pointer">Max Rate Shift &uarr;&darr;</th>
+        <th onclick="sortBestTable(4)" style="cursor:pointer">Baseline Rate &uarr;&darr;</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in best_table %}
+      <tr
+        data-layer="{{ row.layer }}"
+        data-eq="{{ row.extraction_quality }}"
+        data-coeff="{{ row.best_coefficient }}"
+        data-shift="{{ row.best_refusal_rate_shift }}"
+        data-baseline="{{ row.baseline_refusal_rate }}"
+      >
+        <td><strong>{{ row.layer }}</strong></td>
+        <td>{{ "%.4f"|format(row.extraction_quality) }}</td>
+        <td>{{ "%+.1f"|format(row.best_coefficient) }}</td>
+        <td>{{ "%.3f"|format(row.best_refusal_rate_shift) }}</td>
+        <td>{{ "%.2f"|format(row.baseline_refusal_rate) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if sample_generations %}
+<section>
+  <h2>Sample Generations at Best (Layer, Coefficient)</h2>
+  <p class="muted">Showing completions at the best-performing coefficient for each layer. Click a row to expand.</p>
+  <table id="gen-table">
+    <thead>
+      <tr>
+        <th>Layer</th>
+        <th>Coeff</th>
+        <th>Prompt</th>
+        <th>Generation</th>
+        <th>Refusal?</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in sample_generations %}
+      <tr style="cursor:pointer" onclick="toggleGen(this)">
+        <td>{{ g.layer }}</td>
+        <td>{{ "%+.1f"|format(g.coefficient) }}</td>
+        <td class="muted" style="max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">{{ g.prompt }}</td>
+        <td style="max-width:340px">
+          <span class="snippet">{{ g.generation_snippet }}{% if g.generation_full | length > 200 %}&hellip;{% endif %}</span>
+          <span class="full" style="display:none;white-space:pre-wrap">{{ g.generation_full }}</span>
+        </td>
+        <td>{% if g.is_refusal %}<span style="color:#b5400a">&#10007;</span>{% else %}<span style="color:#2e7d32">&#10003;</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<p class="muted">No sample generation data found.</p>
+{% endif %}
+
+<script>
+function toggleGen(row) {
+  var snippet = row.querySelector('.snippet');
+  var full    = row.querySelector('.full');
+  if (!full) return;
+  var showing = full.style.display !== 'none';
+  full.style.display    = showing ? 'none' : '';
+  snippet.style.display = showing ? ''     : 'none';
+}
+
+var bestSortDir = [true, true, true, true, true];  // ascending per column
+function sortBestTable(col) {
+  var tbody = document.querySelector('#best-table tbody');
+  var rows  = Array.from(tbody.querySelectorAll('tr'));
+  var attrs = ['data-layer', 'data-eq', 'data-coeff', 'data-shift', 'data-baseline'];
+  var asc   = bestSortDir[col];
+  rows.sort(function(a, b) {
+    var va = parseFloat(a.getAttribute(attrs[col]));
+    var vb = parseFloat(b.getAttribute(attrs[col]));
+    return asc ? va - vb : vb - va;
+  });
+  bestSortDir[col] = !asc;
+  rows.forEach(function(r) { tbody.appendChild(r); });
+}
+</script>
+{% endblock %}
