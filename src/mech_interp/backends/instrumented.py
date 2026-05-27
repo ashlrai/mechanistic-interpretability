@@ -368,7 +368,17 @@ def create_instrumented_backend(
             model_path=str(model_path) if model_path is not None else None,
         )
 
-    supported = "transformerlens, nnsight, mlx"
+    if normalized in {"huggingface", "hf"}:
+        from mech_interp.backends.hf_adapter import HuggingFaceBackend
+
+        return HuggingFaceBackend(
+            model_name=str(config.get("model_name", "gpt2")),
+            device=str(config.get("device", "auto")),
+            trust_remote_code=bool(config.get("trust_remote_code", False)),
+            architecture=str(config["architecture"]) if "architecture" in config else None,
+        )
+
+    supported = "transformerlens, nnsight, mlx, huggingface"
     raise ValueError(f"Unknown instrumented backend '{backend}'. Supported backends: {supported}.")
 
 

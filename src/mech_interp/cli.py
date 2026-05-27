@@ -237,6 +237,195 @@ def list_saes_command() -> None:
     console.print(table)
 
 
+@app.command("list-hf-architectures")
+def list_hf_architectures_command() -> None:
+    """Print the supported HuggingFace architecture translation maps as a Rich table."""
+    from mech_interp.backends.hf_site_translator import ARCHITECTURE_SITE_MAPS
+
+    for arch, site_map in sorted(ARCHITECTURE_SITE_MAPS.items()):
+        table = Table(title=f"Architecture: {arch}", show_lines=True)
+        table.add_column("TL site pattern", style="cyan")
+        table.add_column("HF module path", style="green")
+        table.add_column("input/output", style="yellow")
+        for tl_pattern, (hf_pattern, io) in sorted(site_map.items()):
+            table.add_row(tl_pattern, hf_pattern, io)
+        console.print(table)
+
+
+@app.command("list-steering")
+def list_steering_command() -> None:
+    """Print all pre-extracted steering vectors in the registry."""
+    from mech_interp.steering.registry import STEERING_REGISTRY
+
+    table = Table(title="Pre-extracted Steering Vectors")
+    table.add_column("Name", style="bold cyan")
+    table.add_column("Model")
+    table.add_column("Hook site")
+    table.add_column("Raw norm")
+    table.add_column("License")
+    table.add_column("Source")
+    for descriptor in sorted(STEERING_REGISTRY.values(), key=lambda d: d.name):
+        source = descriptor.source_paper or descriptor.hf_repo or "—"
+        table.add_row(
+            descriptor.name,
+            descriptor.model_name,
+            descriptor.hook_site,
+            f"{descriptor.direction_norm:.2f}",
+            descriptor.license,
+            source,
+        )
+    console.print(table)
+    console.print(
+        "\n[dim]Apply a vector:[/dim] "
+        "[bold]mech apply-steering --vector <name> --coefficient <c> --prompt <text>[/bold]"
+    )
+
+
+def _steering_load_model(model_name: str, device: str) -> tuple[Any, Any]:
+    """Load a TransformerLens model + tokenizer.  Separated for test-mocking."""
+    try:
+        from transformer_lens import HookedTransformer
+        from transformers import AutoTokenizer
+    except ImportError as exc:
+        raise RuntimeError(
+            "transformer_lens and transformers are required. "
+            "Run: uv sync --extra interp"
+        ) from exc
+    import torch as _torch
+    model = HookedTransformer.from_pretrained(model_name, device=device, dtype=_torch.float32)
+    model.eval()
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    return model, tokenizer
+
+
+def _steering_generate(
+    *,
+    model: Any,
+    tokenizer: Any,
+    prompt: str,
+    direction: Any,
+    hook_site: str,
+    coeff: float,
+    max_new_tokens: int,
+    device: str,
+) -> str:
+    """Generate with (or without) a steering vector applied.  Separated for test-mocking."""
+    import torch as _torch
+
+    tokens = tokenizer(prompt, return_tensors="pt")["input_ids"].to(device)
+    steer_vec = (coeff * direction).to(device)
+
+    def hook_fn(value: Any, hook: Any) -> Any:  # noqa: ARG001
+        return value + steer_vec
+
+    generated_ids = tokens.clone()
+    with _torch.no_grad():
+        for _ in range(max_new_tokens):
+            if coeff == 0.0:
+                out = model(generated_ids)
+            else:
+                out = model.run_with_hooks(
+                    generated_ids,
+                    fwd_hooks=[(hook_site, hook_fn)],
+                )
+            next_token = out[0, -1, :].argmax(dim=-1, keepdim=True).unsqueeze(0)
+            generated_ids = _torch.cat([generated_ids, next_token], dim=-1)
+            eos_id = getattr(tokenizer, "eos_token_id", None)
+            if eos_id is not None and next_token.item() == eos_id:
+                break
+    new_tokens = generated_ids[0, tokens.shape[-1]:]
+    return str(tokenizer.decode(new_tokens, skip_special_tokens=True))
+
+
+@app.command("apply-steering")
+def apply_steering_command(
+    vector: str = typer.Option(..., help="Steering vector name (see mech list-steering)."),  # noqa: B008
+    coefficient: float = typer.Option(  # noqa: B008
+        1.0, help="Steering strength (positive amplifies, negative suppresses)."
+    ),
+    prompt: str = typer.Option(..., help="Generation prompt."),  # noqa: B008
+    max_new_tokens: int = typer.Option(80, min=1, help="Max tokens to generate."),  # noqa: B008
+    device: str = typer.Option("cpu", help="Torch device (cpu / mps / cuda)."),  # noqa: B008
+) -> None:
+    """Apply a registered steering vector to a model and generate from a prompt.
+
+    Loads the model registered with the vector, adds coefficient * direction at
+    the registered hook site, generates a greedy continuation, and prints the
+    baseline (coefficient=0) vs steered result side-by-side in a Rich panel.
+    """
+    from rich.columns import Columns
+    from rich.panel import Panel
+
+    from mech_interp.steering.registry import load_steering_vector
+
+    try:
+        direction, metadata = load_steering_vector(vector, device=device)
+    except KeyError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    model_name: str = str(metadata["model_name"])
+    hook_site: str = str(metadata["hook_site"])
+
+    console.print(
+        f"[bold #176b87]mech apply-steering[/bold #176b87]  "
+        f"vector=[bold]{vector}[/bold]  coeff=[bold]{coefficient:+.1f}[/bold]  "
+        f"model=[dim]{model_name}[/dim]"
+    )
+
+    try:
+        model, tokenizer = _steering_load_model(model_name, device)
+    except RuntimeError as exc:
+        console.print(f"[red]Model load failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    console.print("[dim]Generating baseline (coeff=0)...[/dim]")
+    baseline = _steering_generate(
+        model=model,
+        tokenizer=tokenizer,
+        prompt=prompt,
+        direction=direction,
+        hook_site=hook_site,
+        coeff=0.0,
+        max_new_tokens=max_new_tokens,
+        device=device,
+    )
+
+    console.print(f"[dim]Generating steered (coeff={coefficient:+.1f})...[/dim]")
+    steered = _steering_generate(
+        model=model,
+        tokenizer=tokenizer,
+        prompt=prompt,
+        direction=direction,
+        hook_site=hook_site,
+        coeff=coefficient,
+        max_new_tokens=max_new_tokens,
+        device=device,
+    )
+
+    console.print()
+    console.print(Panel(prompt, title="Prompt", border_style="dim"))
+    norm_val = metadata.get("direction_norm")
+    norm_str = f"{norm_val:.2f}" if isinstance(norm_val, (int, float)) else "?"
+    console.print(
+        Columns(
+            [
+                Panel(baseline, title="Baseline (coeff=0)", border_style="green"),
+                Panel(steered, title=f"Steered (coeff={coefficient:+.1f})", border_style="yellow"),
+            ],
+            equal=True,
+        )
+    )
+    console.print(
+        f"[dim]Vector:[/dim] {vector}  "
+        f"[dim]Hook:[/dim] {hook_site}  "
+        f"[dim]norm={norm_str}[/dim]"
+    )
+
+
 @app.command("download-sae")
 def download_sae_command(
     name: Annotated[str, typer.Option("--name", "-n", help="SAE name (see mech list-saes).")],

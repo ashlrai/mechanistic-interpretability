@@ -26,6 +26,24 @@ class ExperimentBackend(StrEnum):
     TRANSFORMER_LENS = "transformerlens"
     NNSIGHT = "nnsight"
     MLX = "mlx"
+    HUGGINGFACE = "huggingface"
+
+
+# Experiment families that work with the HuggingFace backend.
+HF_SUPPORTED_FAMILIES: frozenset[str] = frozenset({"activation_capture", "circuit_patching"})
+
+# Families that require TL (gradient cache, SAE training, cross-model probing, etc.)
+HF_UNSUPPORTED_FAMILIES: frozenset[str] = frozenset(
+    {
+        "polysemanticity_sae",
+        "sae_cross_model",
+        "crosscoder",
+        "attribution_patching",  # needs run_with_grad_cache
+        "cross_model_representation_probe",
+        "acdc_edge",
+        "acdc_lite",
+    }
+)
 
 
 SUPPORTED_EXPERIMENT_FAMILIES = tuple(family.value for family in ExperimentFamily)

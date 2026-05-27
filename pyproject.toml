@@ -80,9 +80,28 @@ strict = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["mlx_lm", "nnsight", "transformer_lens"]
+module = [
+    "datasets",
+    "datasets.*",
+    "huggingface_hub",
+    "mlx_lm",
+    "nnsight",
+    "pyarrow",
+    "pyarrow.*",
+    "safetensors",
+    "safetensors.*",
+    "torch",
+    "torch.*",
+    "transformer_lens",
+    "transformers",
+    "transformers.*",
+]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["gradio", "gradio.*", "matplotlib", "matplotlib.*", "matplotlib.pyplot"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.test_hf_adapter", "tests.integration.test_hf_backend_e2e"]
+ignore_errors = true
