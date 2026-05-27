@@ -386,3 +386,69 @@ def test_create_instrumented_backend_error_message_lists_hf() -> None:
     with pytest.raises(ValueError) as exc_info:
         create_instrumented_backend("unknown_xyz", {})
     assert "huggingface" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Tests: security fixes
+# ---------------------------------------------------------------------------
+
+def test_get_module_rejects_dunder_attributes() -> None:
+    """Security guard: a malicious YAML can't walk into Python internals via
+    a dotted hook-site path like '__class__.__init__.__globals__.os.system'."""
+    from mech_interp.backends.hf_adapter import _get_module
+
+    class FakeModel:
+        pass
+
+    fake = FakeModel()
+    with pytest.raises(ValueError, match="dunder"):
+        _get_module(fake, "__class__.__init__")
+
+
+def test_get_module_caps_path_depth() -> None:
+    """Bound traversal cost: reject paths with too many components."""
+    from mech_interp.backends.hf_adapter import _get_module
+
+    class FakeModel:
+        pass
+
+    fake = FakeModel()
+    with pytest.raises(ValueError, match="maximum 12"):
+        _get_module(fake, ".".join(["x"] * 13))
+
+
+def test_load_does_not_silently_escalate_trust_remote_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Security: the model loader must NOT auto-enable trust_remote_code on
+    OSError. A user that didn't opt in could otherwise be subjected to
+    arbitrary code execution from a malicious HF repo."""
+    from mech_interp.backends import hf_adapter
+
+    class FakeTransformers:
+        class AutoModelForCausalLM:
+            @staticmethod
+            def from_pretrained(*args: Any, **kwargs: Any) -> Any:
+                raise OSError("model repo requires custom code")
+
+        class AutoTokenizer:
+            @staticmethod
+            def from_pretrained(*args: Any, **kwargs: Any) -> Any:
+                return SimpleNamespace(pad_token="<pad>", eos_token="<eos>")
+
+    import importlib
+
+    real_import_module = importlib.import_module
+
+    def fake_import_module(name: str, package: Any = None) -> Any:
+        if name == "transformers":
+            return FakeTransformers
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+
+    backend = hf_adapter.HuggingFaceBackend(
+        model_name="any/model", trust_remote_code=False
+    )
+    with pytest.raises(RuntimeError, match="trust_remote_code"):
+        backend.load()

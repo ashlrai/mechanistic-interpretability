@@ -10,6 +10,9 @@ dist/
 build/
 *.egg-info/
 
+# mkdocs build output (committed via gh-pages, not main)
+site/
+
 # Local research state
 data/*
 !data/prompts/

@@ -60,10 +60,26 @@ def _require_torch() -> Any:
 # ---------------------------------------------------------------------------
 
 def _get_module(model: Any, dotted_path: str) -> Any:
-    """Retrieve a submodule by dotted path, e.g. ``model.layers.10.mlp``."""
+    """Retrieve a submodule by dotted path, e.g. ``model.layers.10.mlp``.
+
+    SECURITY: rejects dunder attributes (``__class__``, ``__globals__``, etc.)
+    so a malicious experiment YAML cannot walk from a model into arbitrary
+    Python attributes via the hook-site translator. Also caps the path depth
+    at 12 to bound walk cost.
+    """
     parts = dotted_path.split(".")
+    if len(parts) > 12:
+        raise ValueError(
+            f"Hook-site path '{dotted_path}' has {len(parts)} components; "
+            "maximum 12 to bound traversal cost."
+        )
     obj = model
     for part in parts:
+        if part.startswith("__") or part.endswith("__"):
+            raise ValueError(
+                f"Hook-site path '{dotted_path}' contains a dunder component "
+                f"('{part}'); these are rejected to prevent attribute-walk attacks."
+            )
         if part.isdigit():
             obj = obj[int(part)]
         else:
@@ -151,25 +167,32 @@ class HuggingFaceBackend:
             self.model = transformers.AutoModelForCausalLM.from_pretrained(
                 self.model_name, **load_kwargs
             )
-        except OSError:
-            # Some models require trust_remote_code even if user didn't request it.
-            load_kwargs["trust_remote_code"] = True
-            self.model = transformers.AutoModelForCausalLM.from_pretrained(
-                self.model_name, **load_kwargs
-            )
+        except OSError as exc:
+            # SECURITY: do NOT silently retry with trust_remote_code=True. If the
+            # user didn't opt in, a malicious HF repo could ship a modeling_*.py
+            # that executes arbitrary code at load time. Raise a clear error
+            # pointing the user at the security implication so they can opt in
+            # consciously by setting trust_remote_code: true in their YAML.
+            if not self.trust_remote_code:
+                raise RuntimeError(
+                    f"Loading '{self.model_name}' failed and the model repo "
+                    "likely requires custom code (trust_remote_code=True). "
+                    "We do NOT auto-enable this because it allows arbitrary "
+                    "code execution from the HuggingFace repo. If you trust "
+                    "this specific repo, re-run with `trust_remote_code: true` "
+                    "in your experiment YAML's backend parameters."
+                ) from exc
+            raise
 
         self.model = self.model.to(resolved_device)
         self.model.eval()
 
-        try:
-            self.tokenizer = transformers.AutoTokenizer.from_pretrained(
-                self.model_name,
-                trust_remote_code=load_kwargs["trust_remote_code"],
-            )
-        except OSError:
-            self.tokenizer = transformers.AutoTokenizer.from_pretrained(
-                self.model_name, trust_remote_code=True
-            )
+        # Tokenizer uses the SAME trust_remote_code setting as the model — do
+        # not escalate independently for the same reason as above.
+        self.tokenizer = transformers.AutoTokenizer.from_pretrained(
+            self.model_name,
+            trust_remote_code=self.trust_remote_code,
+        )
 
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
