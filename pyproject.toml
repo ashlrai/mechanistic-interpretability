@@ -103,5 +103,5 @@ module = ["gradio", "gradio.*", "matplotlib", "matplotlib.*", "matplotlib.pyplot
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["tests.test_hf_adapter", "tests.integration.test_hf_backend_e2e"]
+module = ["test_hf_adapter", "test_hf_backend_e2e"]
 ignore_errors = true

@@ -174,7 +174,7 @@ def _iter_via_datasets_library(
     max_documents: int,
 ) -> Iterator[str]:
     """Use the ``datasets`` package (fast streaming, memory-efficient)."""
-    from datasets import load_dataset  # type: ignore[import-untyped]
+    from datasets import load_dataset
 
     ds = load_dataset(
         descriptor.hf_repo,
