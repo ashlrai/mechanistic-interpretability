@@ -1,0 +1,88 @@
+site_name: Mechanistic Interpretability Platform
+site_url: https://ashlrai.github.io/mechanistic-interpretability
+site_description: Local mechanistic interpretability research at the speed of curiosity.
+site_author: Mason Wyatt
+repo_url: https://github.com/ashlrai/mechanistic-interpretability
+repo_name: ashlrai/mechanistic-interpretability
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - admonition
+  - tables
+  - attr_list
+  - md_in_html
+  - footnotes
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Investigations:
+      - Overview: investigations/index.md
+      - SAE Replication Crisis: investigations/sae_replication_crisis.md
+      - Qwen Refusal Audit: investigations/refusal_audit.md
+      - GPT-2 Factual Recall: investigations/gpt2_factual_recall.md
+      - Feature Splitting: investigations/feature_splitting.md
+      - SAE at Scale: investigations/sae_at_scale.md
+  - Publications:
+      - Overview: publications/index.md
+      - SAE Replication Crisis (paper): publications/sae_replication_crisis.md
+      - Tweet Thread: publications/sae_replication_crisis_thread.md
+  - Reference:
+      - Experiment Families: reference/families.md
+      - CLI: reference/cli.md
+      - Cockpit: reference/cockpit.md
+  - Notebooks: notebooks/index.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ashlrai/mechanistic-interpretability
+
+copyright: Copyright &copy; 2026 Mason Wyatt

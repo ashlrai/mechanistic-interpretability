@@ -1,3 +1,7 @@
+**[Read the docs at ashlrai.github.io/mechanistic-interpretability](https://ashlrai.github.io/mechanistic-interpretability)** — investigations, publication artifacts, and reference.
+
+---
+
 # Local Mechanistic Interpretability Platform
 
 This project is a local, modular research platform for running large batches of controlled
