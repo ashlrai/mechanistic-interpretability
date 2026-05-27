@@ -142,6 +142,153 @@ def download_corpus_command(
     console.print(f"[green]Corpus '{name}' written to {dest_path}[/green]")
 
 
+@app.command("list-saes")
+def list_saes_command() -> None:
+    """Print all pretrained SAEs registered for download from HuggingFace."""
+    from mech_interp.sae.registry import SAE_REGISTRY
+
+    table = Table(title="Pretrained SAEs")
+    table.add_column("Name")
+    table.add_column("Model")
+    table.add_column("Hook")
+    table.add_column("Features")
+    table.add_column("License")
+    for descriptor in sorted(SAE_REGISTRY.values(), key=lambda d: d.name):
+        table.add_row(
+            descriptor.name,
+            str(descriptor.config.get("model_name", "—")),
+            str(descriptor.config.get("hook_site", "—")),
+            str(descriptor.config.get("n_features", "—")),
+            descriptor.license,
+        )
+    console.print(table)
+
+
+@app.command("download-sae")
+def download_sae_command(
+    name: Annotated[str, typer.Option("--name", "-n", help="SAE name (see mech list-saes).")],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Cache directory (default: data/saes/cache)."),
+    ] = None,
+) -> None:
+    """Download an SAE's weights from HuggingFace into a local cache."""
+    from mech_interp.sae.registry import download_sae
+
+    dest_dir = output or Path("data/saes/cache")
+    try:
+        local_path = download_sae(name, dest_dir=dest_dir)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]SAE '{name}' cached at {local_path}[/green]")
+
+
+@app.command("analyze-sae")
+def analyze_sae_command(
+    name: Annotated[str, typer.Option("--name", "-n", help="SAE name (see mech list-saes).")],
+    prompts: Annotated[
+        Path,
+        typer.Option("--prompts", "-p", help="JSONL or TXT corpus file."),
+    ],
+    max_tokens: int = typer.Option(2000, "--max-tokens", "-m", min=1),  # noqa: B008
+    device: str = typer.Option("cpu", "--device"),  # noqa: B008
+) -> None:
+    """Load a pretrained SAE and run feature analysis on a prompt corpus.
+
+    Captures activations from the SAE's registered model at the registered hook
+    site, runs them through the SAE, and writes a new run record with
+    feature_analysis.json so the result shows up in mech runs and the cockpit.
+    """
+    from mech_interp.backends.instrumented import TransformerLensBackend
+    from mech_interp.datasets.corpus import load_text_corpus
+    from mech_interp.sae import compute_feature_analysis
+    from mech_interp.sae.registry import SAE_REGISTRY, load_pretrained_sae
+    from mech_interp.storage import ArtifactStore, SQLiteResultStore
+    from mech_interp.storage.artifacts import resolve_run_artifact_dir
+    from mech_interp.types import ExperimentSpec
+
+    if name not in SAE_REGISTRY:
+        console.print(f"[red]Unknown SAE '{name}'. Run `mech list-saes`.[/red]")
+        raise typer.Exit(code=1)
+    descriptor = SAE_REGISTRY[name]
+
+    documents = load_text_corpus(prompts, max_documents=None)
+    if not documents:
+        console.print(f"[red]Corpus at {prompts} is empty.[/red]")
+        raise typer.Exit(code=1)
+
+    config = load_config()
+    db = SQLiteResultStore(config.project.database_path, config.project.artifact_dir)
+    artifact_store = ArtifactStore(config.project.artifact_dir)
+    spec = ExperimentSpec(
+        name=f"analyze-sae-{name}",
+        family="polysemanticity_sae",
+        backend="transformerlens",
+        description=f"Feature analysis of pretrained SAE {name} from {descriptor.hf_repo}.",
+        parameters={
+            "source": "pretrained_sae",
+            "sae_name": name,
+            "model": descriptor.config["model_name"],
+            "hook_site": descriptor.config["hook_site"],
+            "prompts_path": str(prompts),
+            "max_tokens": max_tokens,
+            "device": device,
+        },
+    )
+    run = db.create_run(spec)
+    artifact_store.write_json(
+        run.id,
+        "spec.json",
+        {
+            "name": spec.name,
+            "family": spec.family,
+            "backend": spec.backend,
+            "description": spec.description,
+            "parameters": spec.parameters,
+        },
+    )
+    artifact_dir = resolve_run_artifact_dir(run)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    sae, sae_config = load_pretrained_sae(name, device=device)
+    backend = TransformerLensBackend(
+        model_name=str(descriptor.config["model_name"]),
+        device=device,
+    )
+    backend.load()
+    truncated_prompts = documents[: min(len(documents), max_tokens)]
+    captured = backend.capture_activations(truncated_prompts, [descriptor.config["hook_site"]])
+    activation = captured[descriptor.config["hook_site"]]
+
+    import torch
+
+    if activation.ndim == 3:
+        batch, seq, d_model = activation.shape
+        flat = activation.reshape(batch * seq, d_model).to(dtype=torch.float32)
+        prompt_for_token = [truncated_prompts[i] for i in range(batch) for _ in range(seq)]
+    else:
+        flat = activation.to(dtype=torch.float32)
+        prompt_for_token = truncated_prompts
+
+    analysis = compute_feature_analysis(sae, flat.to(device), prompt_for_token)  # type: ignore[arg-type]
+    analysis_path = artifact_dir / "feature_analysis.json"
+    analysis_path.write_text(
+        json.dumps(analysis.as_dict(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    config_path = artifact_dir / "sae_config.json"
+    config_path.write_text(
+        json.dumps(sae_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    console.print(
+        f"[green]Analyzed SAE '{name}' over {flat.shape[0]} tokens; "
+        f"{analysis.live_count}/{analysis.n_features} live features. "
+        f"Run id: {run.id}. Artifacts: {artifact_dir}[/green]"
+    )
+
+
 @app.command("experiments")
 def list_experiments(directory: str = "experiments") -> None:
     """List experiment specs discovered from YAML files."""
