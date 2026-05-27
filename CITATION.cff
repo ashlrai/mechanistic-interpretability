@@ -5,7 +5,7 @@ title: "Mechanistic Interpretability Platform"
 version: 0.1.0-preview
 date-released: 2026-05-27
 license: MIT
-repository-code: "https://github.com/<your-github-username>/mechanistic-interpretability"
+repository-code: "https://github.com/ashlrai/mechanistic-interpretability"
 authors:
   - family-names: Wyatt
     given-names: Mason

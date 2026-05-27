@@ -4,7 +4,7 @@
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Email the maintainer privately at `<security-contact-please-update>`. Include a description of the vulnerability, reproduction steps, and any proof-of-concept code. You will receive an acknowledgment within **24 hours**, an initial severity assessment within **7 days**, and a fix or coordinated public disclosure within **30 days**.
+Email the maintainer privately at `mason@evero-consulting.com` with subject prefix `[SECURITY]`. Include a description of the vulnerability, reproduction steps, and any proof-of-concept code. You will receive an acknowledgment within **24 hours**, an initial severity assessment within **7 days**, and a fix or coordinated public disclosure within **30 days**.
 
 ## Scope
 
