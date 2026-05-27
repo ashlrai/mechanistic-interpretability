@@ -47,6 +47,7 @@ apple = [
     "mlx>=0.18.0",
     "mlx-lm>=0.18.0",
 ]
+gradio = ["gradio>=4.0.0"]
 
 [project.scripts]
 mech = "mech_interp.cli:app"
@@ -78,4 +79,12 @@ warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 module = ["mlx_lm", "nnsight", "transformer_lens"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["matplotlib", "matplotlib.pyplot"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["gradio", "gradio.*", "matplotlib", "matplotlib.*"]
 ignore_missing_imports = true

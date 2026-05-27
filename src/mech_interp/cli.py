@@ -1972,3 +1972,25 @@ def audit_refusal_command(
         f"best_layer={report.best_steering_layer}, "
         f"faithfulness={report.circuit_faithfulness:.4f}"
     )
+
+
+@app.command("gradio")
+def gradio_command(
+    port: int = typer.Option(7860, help="Port to serve on."),
+    share: bool = typer.Option(False, help="Create a public Gradio share link."),
+) -> None:
+    """Launch the interactive Gradio web demo at http://localhost:<port>."""
+    try:
+        import gradio as gr  # noqa: F401
+    except ImportError:
+        console.print(
+            "[red]gradio is not installed.[/red]\n"
+            "Run: [bold]uv sync --extra gradio[/bold]"
+        )
+        raise typer.Exit(code=1) from None
+
+    from mech_interp.gradio_app import build_demo_app
+
+    demo = build_demo_app()
+    console.print(f"[green]Launching Gradio demo on http://localhost:{port}[/green]")
+    demo.launch(server_port=port, share=share, show_error=True)
