@@ -1,0 +1,61 @@
+name: causal-scrubbing-factual-recall
+family: causal_scrubbing
+backend: transformerlens
+description: >
+  Hypothesis: the 4-site circuit (blocks.8.mlp_out, blocks.9.hook_resid_pre,
+  blocks.9.attn.hook_z, blocks.10.hook_resid_pre) is sufficient to explain
+  factual recall in gpt2-small.  Evidence: L8.MLP is top DLA negative writer
+  (mean -3.14), L9 resid_pre is the decision layer (logit lens rank drop),
+  L9 attn carries name-mover patterns, L10 resid_pre is top attribution
+  patching site (|score|=5.04 for run-000047).
+  We protect those 4 sites and scrub all others; faithfulness > 0.5 confirms
+  the hypothesis.
+
+parameters:
+  model: gpt2-small
+  device: cpu
+  seed: 42
+  prompts:
+    - id: "factual-france-1"
+      prompt: "The capital of France is Paris"
+      equivalence_label: "france-capital"
+      target_position: -1
+    - id: "factual-france-2"
+      prompt: "France's capital city is Paris"
+      equivalence_label: "france-capital"
+      target_position: -1
+    - id: "factual-italy-1"
+      prompt: "The capital of Italy is Rome"
+      equivalence_label: "italy-capital"
+      target_position: -1
+    - id: "factual-italy-2"
+      prompt: "Italy's capital city is Rome"
+      equivalence_label: "italy-capital"
+      target_position: -1
+    - id: "factual-germany-1"
+      prompt: "The capital of Germany is Berlin"
+      equivalence_label: "germany-capital"
+      target_position: -1
+    - id: "factual-germany-2"
+      prompt: "Germany's capital city is Berlin"
+      equivalence_label: "germany-capital"
+      target_position: -1
+  protected_sites:
+    - "blocks.8.hook_mlp_out"
+    - "blocks.9.hook_resid_pre"
+    - "blocks.9.attn.hook_z"
+    - "blocks.10.hook_resid_pre"
+  scrubbed_sites:
+    - "blocks.0.attn.hook_z"
+    - "blocks.1.attn.hook_z"
+    - "blocks.2.attn.hook_z"
+    - "blocks.3.attn.hook_z"
+    - "blocks.4.attn.hook_z"
+    - "blocks.5.attn.hook_z"
+    - "blocks.6.attn.hook_z"
+    - "blocks.7.attn.hook_z"
+    - "blocks.10.attn.hook_z"
+    - "blocks.11.attn.hook_z"
+  artifact_policy:
+    retain_activation_tensors: false
+    write_report: true

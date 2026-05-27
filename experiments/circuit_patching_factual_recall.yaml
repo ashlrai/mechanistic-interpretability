@@ -1,0 +1,43 @@
+name: circuit-patching-factual-recall
+family: circuit_patching
+backend: transformerlens
+description: >
+  Exact activation patching on the union of top-3 sites from DLA (run-000042)
+  and attribution patching (run-000047): resid_pre at layers 9, 10, 11 and
+  mlp_out at layers 8, 9, 10. Tests how much of the clean-corrupted logit diff
+  is recovered when we patch each site individually on factual recall prompts.
+  This confirms the causal weight of the components identified by the cheap
+  gradient scan.
+
+parameters:
+  model: gpt2-small
+  device: cpu
+  seed: 42
+  target_position: -1
+  patch_position: -1
+  layers: [8, 9, 10, 11]
+  patch_sites: ["resid_pre", "mlp_out"]
+  prompt_pairs:
+    - id: capital-france
+      clean_prompt: "The capital of France is Paris"
+      corrupted_prompt: "The capital of France is London"
+      correct_token: " Paris"
+      incorrect_token: " London"
+    - id: capital-italy
+      clean_prompt: "The capital of Italy is Rome"
+      corrupted_prompt: "The capital of Italy is Paris"
+      correct_token: " Rome"
+      incorrect_token: " Paris"
+    - id: capital-germany
+      clean_prompt: "The capital of Germany is Berlin"
+      corrupted_prompt: "The capital of Germany is Paris"
+      correct_token: " Berlin"
+      incorrect_token: " Paris"
+    - id: tower-city
+      clean_prompt: "The Eiffel Tower is in Paris"
+      corrupted_prompt: "The Eiffel Tower is in Rome"
+      correct_token: " Paris"
+      incorrect_token: " Rome"
+  artifact_policy:
+    retain_activation_tensors: false
+    write_report: true

@@ -1,0 +1,28 @@
+name: sae-layer9-factual-gpt2
+family: polysemanticity_sae
+backend: transformerlens
+description: >
+  Train a 256-feature top-8 SAE at blocks.9.hook_resid_pre on gpt2-small.
+  Layer 9 is the decision layer identified by logit lens (run-000045):
+  mean rank-of-correct drops from 375 at L8 to 12.8 at L9. Training uses
+  the 100-doc openwebtext sample corpus so features span realistic token
+  distributions. The resulting feature dictionary reveals which geographic
+  / factual concepts are encoded in the pre-L9 residual stream.
+
+parameters:
+  model: gpt2-small
+  hook_site: blocks.9.hook_resid_pre
+  n_features: 256
+  k: 8
+  epochs: 8
+  batch_size: 64
+  learning_rate: 0.001
+  seed: 42
+  device: cpu
+  corpus_path: data/prompts/openwebtext_sample.jsonl
+  seq_len: 64
+  max_tokens: 2000
+  artifact_policy:
+    retain_weights: true
+    write_feature_analysis: true
+    top_prompts_per_feature: 5
