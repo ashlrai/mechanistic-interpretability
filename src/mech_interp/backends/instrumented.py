@@ -79,35 +79,68 @@ class TransformerLensBackend:
             self.load()
         assert self.model is not None
 
+        from mech_interp.experiments.circuit_patching import per_head_site_to_base
+
         results: list[ActivationPatchSiteResult] = []
         for pair in request.prompt_pairs:
             correct_token_id = int(self.model.to_single_token(pair.correct_token))
             incorrect_token_id = int(self.model.to_single_token(pair.incorrect_token))
+
+            # Resolve each requested hook_site to its underlying model hook name.
+            # Per-head synthetic sites (blocks.L.attn.hook_z.head.H) map to the
+            # base hook_z site for cache capture, then patch only head slice H.
+            base_sites_needed: set[str] = set()
+            for hook_site in request.hook_sites:
+                base, _head_idx = per_head_site_to_base(hook_site)
+                base_sites_needed.add(base)
+
             clean_logits, clean_cache = self.model.run_with_cache(
                 pair.clean_prompt,
-                names_filter=lambda name: name in request.hook_sites,
+                names_filter=lambda name, _needed=base_sites_needed: name in _needed,
             )
             corrupted_logits = self.model(pair.corrupted_prompt)
+
             for hook_site in request.hook_sites:
-                if hook_site not in clean_cache:
+                base_site, head_idx = per_head_site_to_base(hook_site)
+                if base_site not in clean_cache:
                     continue
-                clean_activation = clean_cache[hook_site]
+                clean_activation = clean_cache[base_site]
                 patch_position = pair.patch_position
 
-                def patch_hook(
-                    activation: Any,
-                    _hook: Any = None,
-                    clean_value: Any = clean_activation,
-                    position: int = patch_position,
-                    **_kwargs: Any,
-                ) -> Any:
-                    patched_activation = activation.clone()
-                    patched_activation[:, position, ...] = clean_value[:, position, ...]
-                    return patched_activation
+                if head_idx >= 0:
+                    # Per-head patch: only update the head_idx slice of hook_z.
+                    # hook_z shape: (batch, seq, n_heads, d_head)
+                    def patch_hook(
+                        activation: Any,
+                        _hook: Any = None,
+                        clean_value: Any = clean_activation,
+                        position: int = patch_position,
+                        h: int = head_idx,
+                        **_kwargs: Any,
+                    ) -> Any:
+                        patched_activation = activation.clone()
+                        patched_activation[:, position, h, :] = clean_value[
+                            :, position, h, :
+                        ]
+                        return patched_activation
+                else:
+                    # Whole-site patch: original behaviour.
+                    def patch_hook(  # type: ignore[misc]
+                        activation: Any,
+                        _hook: Any = None,
+                        clean_value: Any = clean_activation,
+                        position: int = patch_position,
+                        **_kwargs: Any,
+                    ) -> Any:
+                        patched_activation = activation.clone()
+                        patched_activation[:, position, ...] = clean_value[
+                            :, position, ...
+                        ]
+                        return patched_activation
 
                 patched_logits = self.model.run_with_hooks(
                     pair.corrupted_prompt,
-                    fwd_hooks=[(hook_site, patch_hook)],
+                    fwd_hooks=[(base_site, patch_hook)],
                 )
                 recovery = logit_diff_recovery(
                     clean_logits=_logits_at_position(clean_logits, pair.target_position),
@@ -119,6 +152,11 @@ class TransformerLensBackend:
                     correct_token_index=correct_token_id,
                     incorrect_token_index=incorrect_token_id,
                 )
+                act_norm = (
+                    _tensor_norm_head(clean_activation, patch_position, head_idx)
+                    if head_idx >= 0
+                    else _tensor_norm(clean_activation, patch_position)
+                )
                 results.append(
                     ActivationPatchSiteResult(
                         pair_id=pair.id,
@@ -127,7 +165,7 @@ class TransformerLensBackend:
                         corrupted_logit_diff=recovery.corrupted_logit_diff,
                         patched_logit_diff=recovery.patched_logit_diff,
                         recovery_fraction=recovery.recovery_fraction,
-                        activation_norm=_tensor_norm(clean_activation, pair.patch_position),
+                        activation_norm=act_norm,
                     )
                 )
         return results
@@ -355,6 +393,21 @@ def _logits_at_position(logits: Any, position: int) -> list[float]:
 def _tensor_norm(tensor: Any, position: int) -> float | None:
     try:
         selected = tensor[:, position, ...]
+        norm = selected.norm()
+        item = getattr(norm, "item", None)
+        return float(item() if callable(item) else norm)
+    except (AttributeError, IndexError, TypeError, ValueError, RuntimeError):
+        return None
+
+
+def _tensor_norm_head(tensor: Any, position: int, head_idx: int) -> float | None:
+    """Norm of a single attention-head slice from a hook_z tensor.
+
+    hook_z shape: (batch, seq, n_heads, d_head).
+    Returns the norm of tensor[:, position, head_idx, :] or None on error.
+    """
+    try:
+        selected = tensor[:, position, head_idx, :]
         norm = selected.norm()
         item = getattr(norm, "item", None)
         return float(item() if callable(item) else norm)

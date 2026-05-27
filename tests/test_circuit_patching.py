@@ -290,3 +290,146 @@ def test_runner_dispatches_circuit_patching_family(
     manifest = runner.artifact_store.read_manifest(1)
     manifest_names = {artifact["name"] for artifact in manifest["artifacts"]}
     assert "patching_summary" in manifest_names
+
+
+# ---------------------------------------------------------------------------
+# Per-head expansion helpers
+# ---------------------------------------------------------------------------
+
+from mech_interp.experiments.circuit_patching import (  # noqa: E402
+    expand_hook_z_per_head,
+    per_head_site_to_base,
+)
+
+
+def test_expand_hook_z_per_head_produces_correct_names() -> None:
+    sites = expand_hook_z_per_head("blocks.10.attn.hook_z", n_heads=4)
+    assert sites == [
+        "blocks.10.attn.hook_z.head.0",
+        "blocks.10.attn.hook_z.head.1",
+        "blocks.10.attn.hook_z.head.2",
+        "blocks.10.attn.hook_z.head.3",
+    ]
+
+
+def test_expand_hook_z_per_head_non_hook_z_unchanged() -> None:
+    assert expand_hook_z_per_head("blocks.10.hook_resid_post", n_heads=4) == [
+        "blocks.10.hook_resid_post"
+    ]
+
+
+def test_expand_hook_z_per_head_mlp_out_unchanged() -> None:
+    assert expand_hook_z_per_head("blocks.5.hook_mlp_out", n_heads=16) == [
+        "blocks.5.hook_mlp_out"
+    ]
+
+
+def test_per_head_site_to_base_round_trips() -> None:
+    base, head = per_head_site_to_base("blocks.10.attn.hook_z.head.7")
+    assert base == "blocks.10.attn.hook_z"
+    assert head == 7
+
+
+def test_per_head_site_to_base_non_per_head() -> None:
+    base, head = per_head_site_to_base("blocks.10.attn.hook_z")
+    assert base == "blocks.10.attn.hook_z"
+    assert head == -1
+
+
+def test_per_head_site_to_base_resid_post() -> None:
+    base, head = per_head_site_to_base("blocks.10.hook_resid_post")
+    assert base == "blocks.10.hook_resid_post"
+    assert head == -1
+
+
+def test_circuit_patching_per_head_expands_hook_sites(tmp_path: Path) -> None:
+    """per_head=True expands hook_z sites into n_heads synthetic site names."""
+
+    class PerHeadFakeBackend(FakeCircuitBackend):
+        def run_activation_patching(
+            self,
+            request: ActivationPatchRequest,
+        ) -> list[ActivationPatchSiteResult]:
+            self.request = request
+            return [
+                ActivationPatchSiteResult(
+                    pair_id=request.prompt_pairs[0].id,
+                    hook_site=site,
+                    clean_logit_diff=4.0,
+                    corrupted_logit_diff=-1.0,
+                    patched_logit_diff=2.0,
+                    recovery_fraction=0.6,
+                    activation_norm=1.0,
+                )
+                for site in request.hook_sites
+            ]
+
+    backend = PerHeadFakeBackend()
+    spec = ExperimentSpec(
+        name="per-head-test",
+        family="circuit_patching",
+        backend="transformerlens",
+        parameters={
+            "model": "gpt2-small",
+            "source_prompt": "The Eiffel Tower is in Paris",
+            "target_prompt": "The Eiffel Tower is in Rome",
+            "answer_tokens": {"correct": " Paris", "incorrect": " Rome"},
+            "hook_sites": ["blocks.0.attn.hook_z"],
+            "per_head": True,
+            "n_heads": 4,
+            "sequence_length": 8,
+        },
+    )
+    run = ExperimentRun(
+        id=1,
+        spec_name=spec.name,
+        family=spec.family,
+        backend=spec.backend,
+        status=RunStatus.RUNNING,
+        artifact_dir=tmp_path,
+        created_at=utc_now(),
+    )
+
+    result = CircuitPatchingExperiment(backend=backend).run(spec, run)
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert backend.request is not None
+    assert len(backend.request.hook_sites) == 4
+    assert backend.request.hook_sites[0] == "blocks.0.attn.hook_z.head.0"
+    assert backend.request.hook_sites[3] == "blocks.0.attn.hook_z.head.3"
+    assert result.metrics["requested_site_count"] == 4.0
+
+
+def test_circuit_patching_per_head_false_preserves_existing_behaviour(
+    tmp_path: Path,
+) -> None:
+    """per_head=False (default) must not alter hook site names."""
+    backend = FakeCircuitBackend(missing_second_site=True)
+    spec = ExperimentSpec(
+        name="no-per-head",
+        family="circuit_patching",
+        backend="transformerlens",
+        parameters={
+            "model": "gpt2-small",
+            "source_prompt": "The Eiffel Tower is in Paris",
+            "target_prompt": "The Eiffel Tower is in Rome",
+            "answer_tokens": {"correct": " Paris", "incorrect": " Rome"},
+            "hook_sites": ["blocks.0.attn.hook_z"],
+            "sequence_length": 8,
+        },
+    )
+    run = ExperimentRun(
+        id=1,
+        spec_name=spec.name,
+        family=spec.family,
+        backend=spec.backend,
+        status=RunStatus.RUNNING,
+        artifact_dir=tmp_path,
+        created_at=utc_now(),
+    )
+
+    result = CircuitPatchingExperiment(backend=backend).run(spec, run)
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert backend.request is not None
+    assert backend.request.hook_sites == ("blocks.0.attn.hook_z",)

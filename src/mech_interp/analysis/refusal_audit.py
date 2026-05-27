@@ -239,19 +239,31 @@ def _extract_top_heads(
 def _parse_hook_site(hook_site: str) -> tuple[int, int]:
     """Return (layer, head_index) from a TransformerLens hook site string.
 
+    Handles both legacy whole-layer sites and per-head synthetic sites produced
+    by the ``per_head: true`` circuit patching extension.
+
     Examples
     --------
-    ``blocks.10.attn.hook_z`` → (10, -1)   (head not encoded in site name)
-    ``blocks.10.attn.hook_result`` → (10, -1)
-    ``blocks.10.hook_resid_post`` → (10, -1)
+    ``blocks.10.attn.hook_z``          → (10, -1)   (whole-layer)
+    ``blocks.10.attn.hook_z.head.3``   → (10,  3)   (per-head synthetic)
+    ``blocks.10.attn.hook_result``     → (10, -1)
+    ``blocks.10.hook_resid_post``      → (10, -1)
     """
     import re
 
     layer_match = re.search(r"blocks\.(\d+)", hook_site)
-    head_match = re.search(r"head(\d+)", hook_site)
+    # Match per-head synthetic suffix: ``blocks.L.attn.hook_z.head.H``
+    per_head_match = re.search(r"\.attn\.hook_z\.head\.(\d+)$", hook_site)
+    # Fallback: legacy ``headN`` pattern anywhere in site name
+    legacy_head_match = re.search(r"head(\d+)", hook_site) if not per_head_match else None
 
     layer = int(layer_match.group(1)) if layer_match else -1
-    head = int(head_match.group(1)) if head_match else -1
+    if per_head_match:
+        head = int(per_head_match.group(1))
+    elif legacy_head_match:
+        head = int(legacy_head_match.group(1))
+    else:
+        head = -1
     return layer, head
 
 

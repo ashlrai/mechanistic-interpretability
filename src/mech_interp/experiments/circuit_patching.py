@@ -99,6 +99,13 @@ class CircuitPatchingSpec(BaseModel):
     dtype: str = "float32"
     resource_policy: dict[str, Any] = Field(default_factory=dict)
     artifact_policy: ArtifactPolicy = Field(default_factory=ArtifactPolicy)
+    # Per-head patching: when True, any hook_site ending in `.attn.hook_z` is
+    # expanded into n_heads synthetic sites of the form
+    # ``blocks.L.attn.hook_z.head.H``.  The backend resolves these synthetic
+    # names back to the underlying hook_z site and patches only the H-th head
+    # slice.  Default False preserves the existing whole-layer behaviour.
+    per_head: bool = False
+    n_heads: int = 16
 
     @property
     def resolved_model_name(self) -> str:
@@ -345,7 +352,10 @@ def _pairs_from_dataset(
 def _resolve_hook_sites(config: CircuitPatchingSpec) -> list[str]:
     explicit_sites = config.hook_sites or config.sites
     if explicit_sites:
-        return _non_empty_strings(explicit_sites, "hook_sites")
+        sites = _non_empty_strings(explicit_sites, "hook_sites")
+        if config.per_head:
+            sites = _expand_per_head_sites(sites, config.n_heads)
+        return sites
 
     patch_sites = _non_empty_strings(config.patch_sites or [], "patch_sites")
     if not patch_sites:
@@ -357,6 +367,8 @@ def _resolve_hook_sites(config: CircuitPatchingSpec) -> list[str]:
             raise ValueError("Circuit patching layers must be non-negative integers.")
         for site in patch_sites:
             resolved.append(_expand_site(layer, site))
+    if config.per_head:
+        resolved = _expand_per_head_sites(resolved, config.n_heads)
     return resolved
 
 
@@ -394,6 +406,57 @@ def _expand_site(layer: int, site: str) -> str:
         "attn_out": f"blocks.{layer}.attn.hook_result",
     }
     return aliases.get(site, site)
+
+
+_HOOK_Z_SUFFIX = ".attn.hook_z"
+_PER_HEAD_INFIX = ".attn.hook_z.head."
+
+
+def expand_hook_z_per_head(site: str, n_heads: int) -> list[str]:
+    """Expand a ``blocks.L.attn.hook_z`` site into per-head synthetic names.
+
+    Each returned name has the form ``blocks.L.attn.hook_z.head.H``.
+    Sites that do not end with ``.attn.hook_z`` are returned unchanged as a
+    single-element list.
+
+    Parameters
+    ----------
+    site:
+        A TransformerLens hook site name.
+    n_heads:
+        Number of attention heads to expand into.
+
+    Returns
+    -------
+    list[str]
+        One entry per head (if expandable) or the original site in a list.
+    """
+    if site.endswith(_HOOK_Z_SUFFIX):
+        return [f"{site}.head.{h}" for h in range(n_heads)]
+    return [site]
+
+
+def per_head_site_to_base(site: str) -> tuple[str, int]:
+    """Decompose a per-head synthetic site back to (base_hook_z_site, head_idx).
+
+    Returns ``(site, -1)`` for non-per-head sites.
+    """
+    idx = site.find(_PER_HEAD_INFIX)
+    if idx == -1:
+        return site, -1
+    base = site[:idx] + _HOOK_Z_SUFFIX
+    try:
+        head_idx = int(site[idx + len(_PER_HEAD_INFIX):])
+    except ValueError:
+        return site, -1
+    return base, head_idx
+
+
+def _expand_per_head_sites(sites: list[str], n_heads: int) -> list[str]:
+    expanded: list[str] = []
+    for site in sites:
+        expanded.extend(expand_hook_z_per_head(site, n_heads))
+    return expanded
 
 
 def _non_empty_strings(values: list[str], name: str) -> list[str]:
