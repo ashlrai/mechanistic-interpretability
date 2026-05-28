@@ -589,9 +589,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#three-model-summary" class="md-nav__link">
+  <a href="#four-model-summary" class="md-nav__link">
     <span class="md-ellipsis">
-      Three-model summary
+      Four-model summary
     </span>
   </a>
   
@@ -1096,9 +1096,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#three-model-summary" class="md-nav__link">
+  <a href="#four-model-summary" class="md-nav__link">
     <span class="md-ellipsis">
-      Three-model summary
+      Four-model summary
     </span>
   </a>
   
@@ -1367,14 +1367,15 @@
 </tbody>
 </table>
 <p><strong>Recipe WORKS on Qwen2.5-0.5B</strong> — graded suppression across all negative coefficients (the canonical Arditi pattern), refusal halved from 0.67 to 0.33.</p>
-<h3 id="three-model-summary">Three-model summary<a class="headerlink" href="#three-model-summary" title="Permanent link">&para;</a></h3>
+<h3 id="four-model-summary">Four-model summary<a class="headerlink" href="#four-model-summary" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
 <th>Model</th>
 <th style="text-align: center;">Size</th>
-<th style="text-align: right;">Best coeff</th>
-<th style="text-align: right;">Refusal shift</th>
+<th>Hook</th>
+<th style="text-align: right;">Extr. quality</th>
+<th>Behavioural pattern under steering</th>
 <th>Recipe verdict</th>
 </tr>
 </thead>
@@ -1382,27 +1383,39 @@
 <tr>
 <td>Qwen2-0.5B-Instruct</td>
 <td style="text-align: center;">0.5B</td>
-<td style="text-align: right;">−3.0</td>
-<td style="text-align: right;">0.33 → 0.00</td>
+<td>blocks.12.resid_post</td>
+<td style="text-align: right;">4.311</td>
+<td>coeff −3 → refusal 0.33 → 0.00 (monotonic)</td>
 <td><strong>Works fully</strong></td>
 </tr>
 <tr>
 <td>Qwen2.5-0.5B-Instruct</td>
 <td style="text-align: center;">0.5B</td>
-<td style="text-align: right;">−1 to −3 (graded)</td>
-<td style="text-align: right;">0.67 → 0.33</td>
+<td>blocks.12.resid_post</td>
+<td style="text-align: right;">3.858</td>
+<td>coeff −1..−3 → 0.67 → 0.33 (graded)</td>
 <td><strong>Works partially</strong></td>
 </tr>
 <tr>
 <td>Qwen2.5-1.5B-Instruct</td>
 <td style="text-align: center;">1.5B</td>
-<td style="text-align: right;">−3.0 only (backfire)</td>
-<td style="text-align: right;">0.33 → 0.67</td>
+<td>blocks.10.resid_post</td>
+<td style="text-align: right;">4.105</td>
+<td>coeff −3 only → 0.33 → 0.67 (saturating backfire)</td>
 <td><strong>Fails</strong></td>
+</tr>
+<tr>
+<td>Qwen2.5-3B-Instruct</td>
+<td style="text-align: center;">3B</td>
+<td>blocks.18.resid_post</td>
+<td style="text-align: right;">2.329</td>
+<td>coeff +2/+3 → 0.33 → 0.67; negative coeffs no effect</td>
+<td><strong>Fails (amplify-only)</strong></td>
 </tr>
 </tbody>
 </table>
-<p><strong>The discriminating evidence points at scale, not generation.</strong> Both 0.5B Qwen models show the recipe-working pattern (negative coefficients monotonically reduce refusal). The 1.5B model shows only a saturating backfire at the extreme coefficient. Same Qwen2.5 generation, opposite behaviours at 0.5B vs 1.5B.</p>
+<p><strong>The 4-point trend across Qwen scale is consistent</strong>: as model size grows, the single-layer additive-direction recipe loses the ability to <em>suppress</em> refusal. The 0.5B models give graded suppression; the 1.5B model gives a saturating backfire; the 3B model loses suppression entirely (negative coefficients are dead) but the direction-sign is still correct (positive coefficients increase refusal). Extraction quality also degrades from 4.3 → 2.3 across the same scale at the default hook layer, though the Qwen2.5-1.5B CAA sweep showed extraction quality can be recovered at a different layer; a Qwen2.5-3B CAA sweep is needed to confirm whether <em>any</em> layer enables suppression in the 3B model.</p>
+<p>This 4-point pattern is the strongest evidence yet that the abliteration recipe's domain of applicability is bounded by scale within the Qwen family. The community's typical abliteration targets (3-9B) are above the demonstrated working range.</p>
 <h3 id="implication-for-the-abliteration-literature">Implication for the abliteration literature<a class="headerlink" href="#implication-for-the-abliteration-literature" title="Permanent link">&para;</a></h3>
 <p>Most community abliterations target Llama-3.2-3B / Llama-3.2-8B / Gemma-2-9B — models in the 3-9B range. The Qwen 0.5B → 1.5B transition between "works" and "fails" suggests the recipe may break entirely as model size grows beyond a small handful of billions of parameters. If true, the community's abliteration recipes have an implicit size ceiling nobody has characterised.</p>
 <p>Stages 3-4 (circuit_patching + causal_scrubbing) on the two 0.5B models would formally confirm the recipe's circuit hypothesis holds there (faithfulness &gt; 0.5), then a Qwen2.5-3B audit would localise the transition point.</p>
