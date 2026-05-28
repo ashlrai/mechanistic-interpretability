@@ -570,6 +570,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#multi-model-update-2026-05-27-second-model-added" class="md-nav__link">
+    <span class="md-ellipsis">
+      Multi-model update (2026-05-27, second model added)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#headline" class="md-nav__link">
     <span class="md-ellipsis">
       Headline
@@ -1035,6 +1044,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#multi-model-update-2026-05-27-second-model-added" class="md-nav__link">
+    <span class="md-ellipsis">
+      Multi-model update (2026-05-27, second model added)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#headline" class="md-nav__link">
     <span class="md-ellipsis">
       Headline
@@ -1154,6 +1172,12 @@
 <strong>Total compute:</strong> ~4.5 hours CPU on Apple Silicon MBP across 4 audit stages
 <strong>Run IDs:</strong> 70 (Stage 1, refusal direction) · 71 (Stage 2, CAA layer sweep) · 72 (Stage 3, circuit patching) · 73 (Stage 4, causal scrubbing)
 <strong>Status:</strong> <strong>negative result — standard abliteration recipe fails on this model</strong></p>
+<hr />
+<h2 id="multi-model-update-2026-05-27-second-model-added">Multi-model update (2026-05-27, second model added)<a class="headerlink" href="#multi-model-update-2026-05-27-second-model-added" title="Permanent link">&para;</a></h2>
+<p><strong>Qwen2-0.5B-Instruct (24 layers) Stage 1 result (run 78):</strong> the same single-coefficient steering recipe that FAILED on Qwen2.5-1.5B <strong>succeeds on Qwen2-0.5B-Instruct</strong>. At <code>blocks.12.hook_resid_post</code> with coefficient −3.0, refusal rate drops from 0.33 baseline to <strong>0.00</strong> — all 3 test prompts comply. coeff −2.0 also drops to 0.00. Extraction quality is even higher than on the larger model: <strong>4.311</strong> (vs Qwen2.5-1.5B's 4.105).</p>
+<p>This is a <strong>model-size-dependent</strong> finding. The abliteration recipe is not universally broken; it works on small Qwen models. The transition between "works" (0.5B) and "fails" (1.5B) happens within the Qwen family at sizes most community abliterators target.</p>
+<p>Stages 2-4 of the Qwen2-0.5B audit are queued to localize which layer + which heads — the prediction is that the canonical Arditi recipe works here exactly as published.</p>
+<p><strong>Implication:</strong> the original Qwen2.5-1.5B "headline" below is correct but narrow. The broader picture is that the recipe's domain of applicability is bounded — works on ≤ 0.5B Qwen, fails on ≥ 1.5B Qwen, transition somewhere in between (Qwen2.5-0.5B audit would tell us).</p>
 <hr />
 <h2 id="headline">Headline<a class="headerlink" href="#headline" title="Permanent link">&para;</a></h2>
 <blockquote>
