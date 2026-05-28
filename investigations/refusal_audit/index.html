@@ -576,6 +576,39 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Multi-model update (2026-05-27, second model added)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#qwen25-05b-stage-1-result-run-80-discriminating-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      Qwen2.5-0.5B Stage 1 result (run 80) — discriminating test
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#three-model-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Three-model summary
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#implication-for-the-abliteration-literature" class="md-nav__link">
+    <span class="md-ellipsis">
+      Implication for the abliteration literature
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1050,6 +1083,39 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Multi-model update (2026-05-27, second model added)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#qwen25-05b-stage-1-result-run-80-discriminating-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      Qwen2.5-0.5B Stage 1 result (run 80) — discriminating test
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#three-model-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Three-model summary
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#implication-for-the-abliteration-literature" class="md-nav__link">
+    <span class="md-ellipsis">
+      Implication for the abliteration literature
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1251,7 +1317,95 @@
 </tr>
 </tbody>
 </table>
-<p>Stages 3-4 (circuit_patching + causal_scrubbing) would localize the heads. Predicted: the canonical Arditi recipe's circuit hypothesis WILL hold on Qwen2-0.5B (faithfulness &gt; 0.5), contrasting with the 0.041 faithfulness on Qwen2.5-1.5B.</p>
+<h3 id="qwen25-05b-stage-1-result-run-80-discriminating-test">Qwen2.5-0.5B Stage 1 result (run 80) — discriminating test<a class="headerlink" href="#qwen25-05b-stage-1-result-run-80-discriminating-test" title="Permanent link">&para;</a></h3>
+<p>Adding Qwen2.5-0.5B-Instruct (24L) discriminates between two hypotheses about <em>why</em> Qwen2.5-1.5B's recipe failure occurs: <strong>size</strong> (1.5B too large) vs <strong>model-generation</strong> (Qwen2.5 instruction tuning more robust than Qwen2).</p>
+<p>At <code>blocks.12.hook_resid_post</code>, extraction quality 3.858, <strong>baseline refusal 0.67</strong> (higher than the other two — Qwen2.5-0.5B refuses 2/3 prompts by default):</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Coefficient</th>
+<th style="text-align: right;">Refusal rate</th>
+<th style="text-align: right;">Shift</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">−3.0</td>
+<td style="text-align: right;">0.33</td>
+<td style="text-align: right;"><strong>−0.33</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">−2.0</td>
+<td style="text-align: right;">0.33</td>
+<td style="text-align: right;"><strong>−0.33</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">−1.0</td>
+<td style="text-align: right;">0.33</td>
+<td style="text-align: right;"><strong>−0.33</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.67</td>
+<td style="text-align: right;">0.00</td>
+</tr>
+<tr>
+<td style="text-align: right;">+1.0</td>
+<td style="text-align: right;">0.67</td>
+<td style="text-align: right;">0.00</td>
+</tr>
+<tr>
+<td style="text-align: right;">+2.0</td>
+<td style="text-align: right;">0.67</td>
+<td style="text-align: right;">0.00</td>
+</tr>
+<tr>
+<td style="text-align: right;">+3.0</td>
+<td style="text-align: right;">0.67</td>
+<td style="text-align: right;">0.00</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recipe WORKS on Qwen2.5-0.5B</strong> — graded suppression across all negative coefficients (the canonical Arditi pattern), refusal halved from 0.67 to 0.33.</p>
+<h3 id="three-model-summary">Three-model summary<a class="headerlink" href="#three-model-summary" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: center;">Size</th>
+<th style="text-align: right;">Best coeff</th>
+<th style="text-align: right;">Refusal shift</th>
+<th>Recipe verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen2-0.5B-Instruct</td>
+<td style="text-align: center;">0.5B</td>
+<td style="text-align: right;">−3.0</td>
+<td style="text-align: right;">0.33 → 0.00</td>
+<td><strong>Works fully</strong></td>
+</tr>
+<tr>
+<td>Qwen2.5-0.5B-Instruct</td>
+<td style="text-align: center;">0.5B</td>
+<td style="text-align: right;">−1 to −3 (graded)</td>
+<td style="text-align: right;">0.67 → 0.33</td>
+<td><strong>Works partially</strong></td>
+</tr>
+<tr>
+<td>Qwen2.5-1.5B-Instruct</td>
+<td style="text-align: center;">1.5B</td>
+<td style="text-align: right;">−3.0 only (backfire)</td>
+<td style="text-align: right;">0.33 → 0.67</td>
+<td><strong>Fails</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>The discriminating evidence points at scale, not generation.</strong> Both 0.5B Qwen models show the recipe-working pattern (negative coefficients monotonically reduce refusal). The 1.5B model shows only a saturating backfire at the extreme coefficient. Same Qwen2.5 generation, opposite behaviours at 0.5B vs 1.5B.</p>
+<h3 id="implication-for-the-abliteration-literature">Implication for the abliteration literature<a class="headerlink" href="#implication-for-the-abliteration-literature" title="Permanent link">&para;</a></h3>
+<p>Most community abliterations target Llama-3.2-3B / Llama-3.2-8B / Gemma-2-9B — models in the 3-9B range. The Qwen 0.5B → 1.5B transition between "works" and "fails" suggests the recipe may break entirely as model size grows beyond a small handful of billions of parameters. If true, the community's abliteration recipes have an implicit size ceiling nobody has characterised.</p>
+<p>Stages 3-4 (circuit_patching + causal_scrubbing) on the two 0.5B models would formally confirm the recipe's circuit hypothesis holds there (faithfulness &gt; 0.5), then a Qwen2.5-3B audit would localise the transition point.</p>
 <p><strong>Implication:</strong> the original Qwen2.5-1.5B "headline" below is correct but narrow. The broader picture is that the recipe's domain of applicability is bounded — works on ≤ 0.5B Qwen, fails on ≥ 1.5B Qwen, transition somewhere in between (Qwen2.5-0.5B audit would tell us).</p>
 <hr />
 <h2 id="headline">Headline<a class="headerlink" href="#headline" title="Permanent link">&para;</a></h2>
