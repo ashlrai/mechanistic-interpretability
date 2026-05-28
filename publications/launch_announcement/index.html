@@ -968,7 +968,10 @@
 <li>Circuit hypothesis "L9+L10 attn implement refusal": <strong>faithfulness 0.041, REJECTED</strong></li>
 </ul>
 <p><strong>7/10</strong> Mechanistic evidence: the refusal info is in resid_post at L10-11 (recovery 0.5-1.0), but the local attention heads at those layers carry almost none of it (recovery 0.02-0.13). MLPs probably write it — the standard abliteration recipe targets the wrong site.</p>
-<p><strong>8/10</strong> The platform also has:
+<p><strong>8/10</strong> Headline finding 3 (bonus): I ran our edge-level ACDC on the canonical Wang et al. 2022 IOI task on gpt2-small.</p>
+<p>Recall: 3/12 canonical heads. Hits the late-layer name movers cleanly. Misses the entire upstream chain (s_inhibition, induction, duplicate_token).</p>
+<p>Faithfulness 0.26 — flagged as partial. Honest validation &gt; optimistic spin.</p>
+<p><strong>8b/10</strong> The platform also has:
 - Interactive Gradio demo: <code>mech gradio</code>
 - Pretrained SAE registry + sae_lens bridge
 - Steering vector library: <code>mech apply-steering --vector refusal-qwen-2.5-1.5b-l10</code>
