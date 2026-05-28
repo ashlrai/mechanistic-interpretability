@@ -598,6 +598,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#qwen25-3b-caa-sweep-run-82-no-layer-enables-suppression" class="md-nav__link">
+    <span class="md-ellipsis">
+      Qwen2.5-3B CAA sweep (run 82) — no layer enables suppression
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#implication-for-the-abliteration-literature" class="md-nav__link">
     <span class="md-ellipsis">
       Implication for the abliteration literature
@@ -1105,6 +1114,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#qwen25-3b-caa-sweep-run-82-no-layer-enables-suppression" class="md-nav__link">
+    <span class="md-ellipsis">
+      Qwen2.5-3B CAA sweep (run 82) — no layer enables suppression
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#implication-for-the-abliteration-literature" class="md-nav__link">
     <span class="md-ellipsis">
       Implication for the abliteration literature
@@ -1416,6 +1434,51 @@
 </table>
 <p><strong>The 4-point trend across Qwen scale is consistent</strong>: as model size grows, the single-layer additive-direction recipe loses the ability to <em>suppress</em> refusal. The 0.5B models give graded suppression; the 1.5B model gives a saturating backfire; the 3B model loses suppression entirely (negative coefficients are dead) but the direction-sign is still correct (positive coefficients increase refusal). Extraction quality also degrades from 4.3 → 2.3 across the same scale at the default hook layer, though the Qwen2.5-1.5B CAA sweep showed extraction quality can be recovered at a different layer; a Qwen2.5-3B CAA sweep is needed to confirm whether <em>any</em> layer enables suppression in the 3B model.</p>
 <p>This 4-point pattern is the strongest evidence yet that the abliteration recipe's domain of applicability is bounded by scale within the Qwen family. The community's typical abliteration targets (3-9B) are above the demonstrated working range.</p>
+<h3 id="qwen25-3b-caa-sweep-run-82-no-layer-enables-suppression">Qwen2.5-3B CAA sweep (run 82) — no layer enables suppression<a class="headerlink" href="#qwen25-3b-caa-sweep-run-82-no-layer-enables-suppression" title="Permanent link">&para;</a></h3>
+<p>To rule out "wrong default layer" as the explanation for Stage 1's null result, a 4-layer CAA sweep was run on Qwen2.5-3B-Instruct:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Layer</th>
+<th style="text-align: right;">Extraction quality</th>
+<th style="text-align: right;">Direction norm</th>
+<th style="text-align: right;">Best coeff</th>
+<th style="text-align: right;">Best shift</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">9</td>
+<td style="text-align: right;">1.68</td>
+<td style="text-align: right;">6.6</td>
+<td style="text-align: right;">−3.0</td>
+<td style="text-align: right;">0.000</td>
+</tr>
+<tr>
+<td style="text-align: right;">18</td>
+<td style="text-align: right;">2.33</td>
+<td style="text-align: right;">20.3</td>
+<td style="text-align: right;">+2.0</td>
+<td style="text-align: right;">+0.333 (amplify)</td>
+</tr>
+<tr>
+<td style="text-align: right;">27</td>
+<td style="text-align: right;">3.99</td>
+<td style="text-align: right;">47.2</td>
+<td style="text-align: right;">+3.0</td>
+<td style="text-align: right;">+0.333 (amplify)</td>
+</tr>
+<tr>
+<td style="text-align: right;">34</td>
+<td style="text-align: right;">3.93</td>
+<td style="text-align: right;">145.7</td>
+<td style="text-align: right;">−3.0</td>
+<td style="text-align: right;">0.000</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Across all 4 layers, no negative coefficient suppresses refusal.</strong> Only positive coefficients (amplification) produce a behavioral shift, and only at specific mid-late layers. The direction norms grow dramatically with depth (6.6 → 145.7) without corresponding suppression efficacy. This pattern is consistent with refusal being implemented redundantly across multiple residual-stream directions by 3B — single-direction additive steering cannot suppress what is computed by parallel paths.</p>
+<p>This locks the 4-model story: the Qwen2.5-3B failure is not a hook-choice artifact; it is a property of the model. The recipe's domain of applicability ends below 3B within the Qwen family.</p>
 <h3 id="implication-for-the-abliteration-literature">Implication for the abliteration literature<a class="headerlink" href="#implication-for-the-abliteration-literature" title="Permanent link">&para;</a></h3>
 <p>Most community abliterations target Llama-3.2-3B / Llama-3.2-8B / Gemma-2-9B — models in the 3-9B range. The Qwen 0.5B → 1.5B transition between "works" and "fails" suggests the recipe may break entirely as model size grows beyond a small handful of billions of parameters. If true, the community's abliteration recipes have an implicit size ceiling nobody has characterised.</p>
 <p>Stages 3-4 (circuit_patching + causal_scrubbing) on the two 0.5B models would formally confirm the recipe's circuit hypothesis holds there (faithfulness &gt; 0.5), then a Qwen2.5-3B audit would localise the transition point.</p>
