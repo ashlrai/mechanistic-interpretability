@@ -961,13 +961,14 @@
 <p><strong>Zero conditions cross the 0.9 "same feature" threshold.</strong></p>
 <p><strong>5/10</strong> This is informative because the SAE literature implicitly assumes feature dictionaries are seed-stable. "The X feature of model M" is a training-run property, not a model property, at the scales I tested.</p>
 <p>Full paper draft + reproduce.sh: link below.</p>
-<p><strong>6/10</strong> Headline finding 2: I ran a full 4-stage abliteration audit on Qwen2.5-1.5B-Instruct.</p>
+<p><strong>6/10</strong> Headline finding 2: I audited 3 Qwen instruct models with the same 4-stage pipeline. The abliteration recipe is <strong>size-dependent</strong>:</p>
 <ul>
-<li>Direction extracted: quality 4.105 (clean separation)</li>
-<li>Layer-10 single-coefficient steering: doesn't decrease refusal</li>
-<li>Circuit hypothesis "L9+L10 attn implement refusal": <strong>faithfulness 0.041, REJECTED</strong></li>
+<li>Qwen2-0.5B:   coeff −3 → refusal 0.33 → 0.00  <strong>WORKS</strong></li>
+<li>Qwen2.5-0.5B: coeff −1..−3 graded → 0.67 → 0.33  <strong>WORKS</strong></li>
+<li>Qwen2.5-1.5B: coeff −3 → refusal 0.33 → 0.67  <strong>FAILS (backfires)</strong></li>
 </ul>
-<p><strong>7/10</strong> Mechanistic evidence: the refusal info is in resid_post at L10-11 (recovery 0.5-1.0), but the local attention heads at those layers carry almost none of it (recovery 0.02-0.13). MLPs probably write it — the standard abliteration recipe targets the wrong site.</p>
+<p><strong>7/10</strong> Same recipe, same Qwen family. Both 0.5B models give the canonical recipe-working pattern (monotonic suppression as coefficient becomes more negative). The 1.5B model fails. The transition happens between 0.5B and 1.5B — exactly where the community's typical abliteration targets start.</p>
+<p>Stage 4 scrubbing on Qwen2.5-1.5B formally rejects the L9+L10 attn circuit hypothesis: faithfulness <strong>0.041</strong>. Mechanistic evidence: refusal info lives in resid_post at L10-11 (recovery 0.5-1.0) but attention heads at those layers carry almost none (0.02-0.13). MLPs probably write it.</p>
 <p><strong>8/10</strong> Headline finding 3 (bonus): I ran our edge-level ACDC on the canonical Wang et al. 2022 IOI task on gpt2-small.</p>
 <p>Recall: 3/12 canonical heads. Hits the late-layer name movers cleanly. Misses the entire upstream chain (s_inhibition, induction, duplicate_token).</p>
 <p>Faithfulness 0.26 — flagged as partial. Honest validation &gt; optimistic spin.</p>

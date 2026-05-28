@@ -944,6 +944,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#related-platform-finding-abliteration-recipe-is-size-dependent" class="md-nav__link">
+    <span class="md-ellipsis">
+      Related platform finding: abliteration recipe is size-dependent
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#asks" class="md-nav__link">
     <span class="md-ellipsis">
       Asks
@@ -1036,6 +1045,44 @@
 <p>While building the platform I also ran our edge-level ACDC approximation (KL-weighted-by-layer-gap, not true path patching) on the canonical Wang et al. 2022 IOI task. <strong>It recovers 3 of 12 canonical heads — the two backup_name_movers (10,7) + (11,10) at 100% recall plus name_mover (10,0).</strong> It misses the entire upstream chain (s_inhibition L7-8, induction L5, duplicate_token L0-3). Faithfulness 0.259, flagged as partial.</p>
 <p>This is consistent with the approximation's documented late-layer bias: KL weighted by 1/layer_gap favors writer heads near the answer, misses long-range causal chains. The platform reports it honestly rather than claiming "the IOI circuit" — see <code>docs/investigations/ioi_canonical_reproduction.md</code>.</p>
 <p>This matters here because the same algorithm was used in the abliteration audit below — the negative result holds, but specific head attributions in that audit should be treated as candidates not conclusions.</p>
+<h2 id="related-platform-finding-abliteration-recipe-is-size-dependent">Related platform finding: abliteration recipe is size-dependent<a class="headerlink" href="#related-platform-finding-abliteration-recipe-is-size-dependent" title="Permanent link">&para;</a></h2>
+<p>While Investigation #1 set out to audit the standard Arditi abliteration recipe on Qwen2.5-1.5B-Instruct and found it <strong>fails</strong> (extraction quality 4.1, but circuit faithfulness 0.041 — formally rejected), the follow-up multi-model audit produces a much more interesting pattern:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: center;">Size</th>
+<th style="text-align: right;">Best coeff</th>
+<th style="text-align: right;">Refusal shift</th>
+<th>Recipe verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen2-0.5B-Instruct</td>
+<td style="text-align: center;">0.5B</td>
+<td style="text-align: right;">−3.0</td>
+<td style="text-align: right;">0.33 → 0.00</td>
+<td><strong>Works fully</strong></td>
+</tr>
+<tr>
+<td>Qwen2.5-0.5B-Instruct</td>
+<td style="text-align: center;">0.5B</td>
+<td style="text-align: right;">−1 to −3 graded</td>
+<td style="text-align: right;">0.67 → 0.33</td>
+<td><strong>Works partially</strong></td>
+</tr>
+<tr>
+<td>Qwen2.5-1.5B-Instruct</td>
+<td style="text-align: center;">1.5B</td>
+<td style="text-align: right;">−3.0 only (backfire)</td>
+<td style="text-align: right;">0.33 → 0.67</td>
+<td><strong>Fails</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Both 0.5B Qwen models respond to the recipe; the 1.5B model doesn't.</strong> The transition happens within a single model family, at sizes the community's abliteration writeups typically target (3-9B). If the pattern extrapolates, the recipe has an implicit size ceiling nobody has characterised.</p>
+<p>Full 4-stage detail at <code>docs/investigations/refusal_audit.md</code>.</p>
 <h2 id="asks">Asks<a class="headerlink" href="#asks" title="Permanent link">&para;</a></h2>
 <ol>
 <li><strong>If you've trained SAEs and have your own seed-stability data, please compare notes.</strong> Especially curious about larger models + L1 / JumpReLU recipes.</li>
