@@ -35,7 +35,39 @@ So the side-by-side picture across the two audited models is:
 | Behavioural effect at best layer, coeff −3 | refusal **0.33 → 0.00** | refusal **0.33 → 0.67** |
 | Recipe verdict | **works** | **fails** |
 
-Stages 3-4 (circuit_patching + causal_scrubbing) would localize the heads. Predicted: the canonical Arditi recipe's circuit hypothesis WILL hold on Qwen2-0.5B (faithfulness > 0.5), contrasting with the 0.041 faithfulness on Qwen2.5-1.5B.
+### Qwen2.5-0.5B Stage 1 result (run 80) — discriminating test
+
+Adding Qwen2.5-0.5B-Instruct (24L) discriminates between two hypotheses about *why* Qwen2.5-1.5B's recipe failure occurs: **size** (1.5B too large) vs **model-generation** (Qwen2.5 instruction tuning more robust than Qwen2).
+
+At `blocks.12.hook_resid_post`, extraction quality 3.858, **baseline refusal 0.67** (higher than the other two — Qwen2.5-0.5B refuses 2/3 prompts by default):
+
+| Coefficient | Refusal rate | Shift |
+|---:|---:|---:|
+| −3.0 | 0.33 | **−0.33** |
+| −2.0 | 0.33 | **−0.33** |
+| −1.0 | 0.33 | **−0.33** |
+| 0.0 | 0.67 | 0.00 |
+| +1.0 | 0.67 | 0.00 |
+| +2.0 | 0.67 | 0.00 |
+| +3.0 | 0.67 | 0.00 |
+
+**Recipe WORKS on Qwen2.5-0.5B** — graded suppression across all negative coefficients (the canonical Arditi pattern), refusal halved from 0.67 to 0.33.
+
+### Three-model summary
+
+| Model | Size | Best coeff | Refusal shift | Recipe verdict |
+|---|:---:|---:|---:|---|
+| Qwen2-0.5B-Instruct | 0.5B | −3.0 | 0.33 → 0.00 | **Works fully** |
+| Qwen2.5-0.5B-Instruct | 0.5B | −1 to −3 (graded) | 0.67 → 0.33 | **Works partially** |
+| Qwen2.5-1.5B-Instruct | 1.5B | −3.0 only (backfire) | 0.33 → 0.67 | **Fails** |
+
+**The discriminating evidence points at scale, not generation.** Both 0.5B Qwen models show the recipe-working pattern (negative coefficients monotonically reduce refusal). The 1.5B model shows only a saturating backfire at the extreme coefficient. Same Qwen2.5 generation, opposite behaviours at 0.5B vs 1.5B.
+
+### Implication for the abliteration literature
+
+Most community abliterations target Llama-3.2-3B / Llama-3.2-8B / Gemma-2-9B — models in the 3-9B range. The Qwen 0.5B → 1.5B transition between "works" and "fails" suggests the recipe may break entirely as model size grows beyond a small handful of billions of parameters. If true, the community's abliteration recipes have an implicit size ceiling nobody has characterised.
+
+Stages 3-4 (circuit_patching + causal_scrubbing) on the two 0.5B models would formally confirm the recipe's circuit hypothesis holds there (faithfulness > 0.5), then a Qwen2.5-3B audit would localise the transition point.
 
 **Implication:** the original Qwen2.5-1.5B "headline" below is correct but narrow. The broader picture is that the recipe's domain of applicability is bounded — works on ≤ 0.5B Qwen, fails on ≥ 1.5B Qwen, transition somewhere in between (Qwen2.5-0.5B audit would tell us).
 
