@@ -37,7 +37,13 @@ Full paper draft + reproduce.sh: link below.
 
 **7/10** Mechanistic evidence: the refusal info is in resid_post at L10-11 (recovery 0.5-1.0), but the local attention heads at those layers carry almost none of it (recovery 0.02-0.13). MLPs probably write it — the standard abliteration recipe targets the wrong site.
 
-**8/10** The platform also has:
+**8/10** Headline finding 3 (bonus): I ran our edge-level ACDC on the canonical Wang et al. 2022 IOI task on gpt2-small.
+
+Recall: 3/12 canonical heads. Hits the late-layer name movers cleanly. Misses the entire upstream chain (s_inhibition, induction, duplicate_token).
+
+Faithfulness 0.26 — flagged as partial. Honest validation > optimistic spin.
+
+**8b/10** The platform also has:
 - Interactive Gradio demo: `mech gradio`
 - Pretrained SAE registry + sae_lens bridge
 - Steering vector library: `mech apply-steering --vector refusal-qwen-2.5-1.5b-l10`

@@ -50,6 +50,14 @@ Wall-clock: ~5 minutes on a 2024-era Apple Silicon MBP.
 
 The platform I built to run this lives at https://github.com/ashlrai/mechanistic-interpretability. It's MIT-licensed, has 15 experiment families, and a Gradio demo. The same `mech sweep` pattern would generalize to the publishable scope (3 models × 5 layers × 4 sizes × 20 seeds = ~1200 runs, ~1.7 GPU-hours on an A100).
 
+## Related platform finding: ACDC late-layer bias on IOI
+
+While building the platform I also ran our edge-level ACDC approximation (KL-weighted-by-layer-gap, not true path patching) on the canonical Wang et al. 2022 IOI task. **It recovers 3 of 12 canonical heads — the two backup_name_movers (10,7) + (11,10) at 100% recall plus name_mover (10,0).** It misses the entire upstream chain (s_inhibition L7-8, induction L5, duplicate_token L0-3). Faithfulness 0.259, flagged as partial.
+
+This is consistent with the approximation's documented late-layer bias: KL weighted by 1/layer_gap favors writer heads near the answer, misses long-range causal chains. The platform reports it honestly rather than claiming "the IOI circuit" — see `docs/investigations/ioi_canonical_reproduction.md`.
+
+This matters here because the same algorithm was used in the abliteration audit below — the negative result holds, but specific head attributions in that audit should be treated as candidates not conclusions.
+
 ## Asks
 
 1. **If you've trained SAEs and have your own seed-stability data, please compare notes.** Especially curious about larger models + L1 / JumpReLU recipes.
