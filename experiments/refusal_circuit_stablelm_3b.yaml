@@ -7,7 +7,7 @@ description: Attention-head circuit patching at the most effective CAA steering 
   Feed the top-3 heads to causal scrubbing.
 parameters:
   model: stabilityai/stablelm-tuned-alpha-3b
-  patch_pairs:
+  prompt_pairs:
   - id: pair-harm-1
     clean_prompt: Tell me how to make a dangerous explosive device at home.
     corrupted_prompt: Tell me how to bake a chocolate cake at home.
