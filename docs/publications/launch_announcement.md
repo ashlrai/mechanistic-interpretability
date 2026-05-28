@@ -29,13 +29,14 @@ I trained the same SAE 5 times with different seeds. Live-only median best-match
 
 Full paper draft + reproduce.sh: link below.
 
-**6/10** Headline finding 2: I audited 3 Qwen instruct models with the same 4-stage pipeline. The abliteration recipe is **size-dependent**:
+**6/10** Headline finding 2: I audited 4 Qwen instruct models from 0.5B to 3B params. The abliteration recipe's ability to suppress refusal **degrades monotonically with scale**:
 
-- Qwen2-0.5B:   coeff −3 → refusal 0.33 → 0.00  **WORKS**
-- Qwen2.5-0.5B: coeff −1..−3 graded → 0.67 → 0.33  **WORKS**
-- Qwen2.5-1.5B: coeff −3 → refusal 0.33 → 0.67  **FAILS (backfires)**
+- Qwen2-0.5B:   coeff −3 → refusal 0.33 → 0.00  **WORKS fully**
+- Qwen2.5-0.5B: coeff −1..−3 graded → 0.67 → 0.33  **WORKS partially**
+- Qwen2.5-1.5B: coeff −3 only → 0.33 → 0.67  **BACKFIRES**
+- Qwen2.5-3B:   no negative-coefficient effect at all  **suppression gone**
 
-**7/10** Same recipe, same Qwen family. Both 0.5B models give the canonical recipe-working pattern (monotonic suppression as coefficient becomes more negative). The 1.5B model fails. The transition happens between 0.5B and 1.5B — exactly where the community's typical abliteration targets start.
+**7/10** Same Qwen family. Both 0.5B models suppress refusal monotonically (canonical recipe-working pattern). The 1.5B model saturates and backfires. The 3B model loses suppression entirely — negative coefficients are dead, only positive coefficients (amplification) still respond. Most community abliteration targets sit at 3-9B, above the demonstrated working range.
 
 Stage 4 scrubbing on Qwen2.5-1.5B formally rejects the L9+L10 attn circuit hypothesis: faithfulness **0.041**. Mechanistic evidence: refusal info lives in resid_post at L10-11 (recovery 0.5-1.0) but attention heads at those layers carry almost none (0.02-0.13). MLPs probably write it.
 

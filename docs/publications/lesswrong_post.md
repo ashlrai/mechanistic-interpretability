@@ -67,8 +67,9 @@ While Investigation #1 set out to audit the standard Arditi abliteration recipe 
 | Qwen2-0.5B-Instruct | 0.5B | −3.0 | 0.33 → 0.00 | **Works fully** |
 | Qwen2.5-0.5B-Instruct | 0.5B | −1 to −3 graded | 0.67 → 0.33 | **Works partially** |
 | Qwen2.5-1.5B-Instruct | 1.5B | −3.0 only (backfire) | 0.33 → 0.67 | **Fails** |
+| Qwen2.5-3B-Instruct | 3B | no negative coeff effect | (suppression gone) | **Fails — amplify only** |
 
-**Both 0.5B Qwen models respond to the recipe; the 1.5B model doesn't.** The transition happens within a single model family, at sizes the community's abliteration writeups typically target (3-9B). If the pattern extrapolates, the recipe has an implicit size ceiling nobody has characterised.
+**The ability to suppress refusal via single-layer additive steering degrades monotonically with Qwen scale.** 0.5B models give graded suppression (the canonical recipe-working pattern); 1.5B saturates and backfires; 3B loses suppression entirely. The transition happens at sizes the community's abliteration writeups typically target (3-9B). If the pattern extrapolates, the recipe has an implicit size ceiling nobody has characterised.
 
 Full 4-stage detail at `docs/investigations/refusal_audit.md`.
 
