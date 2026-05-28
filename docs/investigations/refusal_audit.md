@@ -66,6 +66,21 @@ At `blocks.12.hook_resid_post`, extraction quality 3.858, **baseline refusal 0.6
 
 This 4-point pattern is the strongest evidence yet that the abliteration recipe's domain of applicability is bounded by scale within the Qwen family. The community's typical abliteration targets (3-9B) are above the demonstrated working range.
 
+### Qwen2.5-3B CAA sweep (run 82) — no layer enables suppression
+
+To rule out "wrong default layer" as the explanation for Stage 1's null result, a 4-layer CAA sweep was run on Qwen2.5-3B-Instruct:
+
+| Layer | Extraction quality | Direction norm | Best coeff | Best shift |
+|---:|---:|---:|---:|---:|
+| 9 | 1.68 | 6.6 | −3.0 | 0.000 |
+| 18 | 2.33 | 20.3 | +2.0 | +0.333 (amplify) |
+| 27 | 3.99 | 47.2 | +3.0 | +0.333 (amplify) |
+| 34 | 3.93 | 145.7 | −3.0 | 0.000 |
+
+**Across all 4 layers, no negative coefficient suppresses refusal.** Only positive coefficients (amplification) produce a behavioral shift, and only at specific mid-late layers. The direction norms grow dramatically with depth (6.6 → 145.7) without corresponding suppression efficacy. This pattern is consistent with refusal being implemented redundantly across multiple residual-stream directions by 3B — single-direction additive steering cannot suppress what is computed by parallel paths.
+
+This locks the 4-model story: the Qwen2.5-3B failure is not a hook-choice artifact; it is a property of the model. The recipe's domain of applicability ends below 3B within the Qwen family.
+
 ### Implication for the abliteration literature
 
 Most community abliterations target Llama-3.2-3B / Llama-3.2-8B / Gemma-2-9B — models in the 3-9B range. The Qwen 0.5B → 1.5B transition between "works" and "fails" suggests the recipe may break entirely as model size grows beyond a small handful of billions of parameters. If true, the community's abliteration recipes have an implicit size ceiling nobody has characterised.
