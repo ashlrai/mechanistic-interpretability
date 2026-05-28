@@ -22,7 +22,7 @@
     
     
       
-        <title>SAEs are not unique solutions: feature dictionaries diverge across random seeds - Mechanistic Interpretability Platform</title>
+        <title>How reproducible are SAE features across seeds? A small-scale measurement (and a scale control) - Mechanistic Interpretability Platform</title>
       
     
     
@@ -74,7 +74,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#saes-are-not-unique-solutions-feature-dictionaries-diverge-across-random-seeds" class="md-skip">
+        <a href="#how-reproducible-are-sae-features-across-seeds-a-small-scale-measurement-and-a-scale-control" class="md-skip">
           Skip to content
         </a>
       
@@ -110,7 +110,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              SAEs are not unique solutions: feature dictionaries diverge across random seeds
+              How reproducible are SAE features across seeds? A small-scale measurement (and a scale control)
             
           </span>
         </div>
@@ -899,27 +899,27 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#why-i-think-this-matters" class="md-nav__link">
+  <a href="#the-measurement" class="md-nav__link">
     <span class="md-ellipsis">
-      Why I think this matters
+      The measurement
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-this-implies" class="md-nav__link">
+  <a href="#why-i-think-its-worth-measuring" class="md-nav__link">
     <span class="md-ellipsis">
-      What this implies
+      Why I think it's worth measuring
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#caveats-this-is-a-preliminary-report" class="md-nav__link">
+  <a href="#caveats-these-are-load-bearing" class="md-nav__link">
     <span class="md-ellipsis">
-      Caveats — this is a preliminary report
+      Caveats (these are load-bearing)
     </span>
   </a>
   
@@ -935,18 +935,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#related-platform-finding-acdc-late-layer-bias-on-ioi" class="md-nav__link">
+  <a href="#two-related-findings-from-the-same-platform" class="md-nav__link">
     <span class="md-ellipsis">
-      Related platform finding: ACDC late-layer bias on IOI
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-platform-finding-abliteration-recipe-is-size-dependent" class="md-nav__link">
-    <span class="md-ellipsis">
-      Related platform finding: abliteration recipe is size-dependent
+      Two related findings from the same platform
     </span>
   </a>
   
@@ -979,122 +970,77 @@
   
 
 
-<h1 id="saes-are-not-unique-solutions-feature-dictionaries-diverge-across-random-seeds">SAEs are not unique solutions: feature dictionaries diverge across random seeds<a class="headerlink" href="#saes-are-not-unique-solutions-feature-dictionaries-diverge-across-random-seeds" title="Permanent link">&para;</a></h1>
-<p><em>Cross-posted from <a href="https://ashlrai.github.io/mechanistic-interpretability/publications/sae_replication_crisis/">the platform's findings page</a>. Full paper draft + reproduction script at the same link.</em></p>
+<h1 id="how-reproducible-are-sae-features-across-seeds-a-small-scale-measurement-and-a-scale-control">How reproducible are SAE features across seeds? A small-scale measurement (and a scale control)<a class="headerlink" href="#how-reproducible-are-sae-features-across-seeds-a-small-scale-measurement-and-a-scale-control" title="Permanent link">&para;</a></h1>
+<p><em>Cross-posted from <a href="https://ashlrai.github.io/mechanistic-interpretability/">the platform's findings page</a>. Reproduction scripts + raw data linked at the bottom.</em></p>
 <h2 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h2>
-<p>I trained the same Top-K Sparse Autoencoder on GPT-2 small five times with identical hyperparameters and different random seeds, then asked whether the feature dictionaries are the same. Using optimal bipartite matching on decoder-cosine matrices between every seed pair:</p>
+<p>I trained Top-K Sparse Autoencoders on GPT-2 small with identical hyperparameters and different random seeds, then measured how well the learned feature dictionaries align across seeds (optimal bipartite matching on decoder-cosine matrices, restricted to live features). The headline:</p>
+<p><strong>SAE feature reproducibility improves substantially with training scale, but even after removing the dead-feature confound and training on 30× more data, the median cross-seed best-match cosine is only ~0.47 — far below the ~0.9 bar implied when we call something "the X feature of model M". Only ~4% of features reach that bar.</strong></p>
+<p>This is a small-scale measurement (GPT-2 small, ≤30K training tokens, Top-K SAEs). It is <strong>not</strong> evidence that production-scale SAEs are irreproducible — the trend with scale is upward, and I did not test the 1M–1B-token regime real SAEs use. I'm posting it because the scale-dependence itself is the interesting part, and because I couldn't find a systematic seed-stability measurement in the literature.</p>
+<h2 id="the-measurement">The measurement<a class="headerlink" href="#the-measurement" title="Permanent link">&para;</a></h2>
+<p>Five seeds, identical config, GPT-2 small <code>blocks.6.hook_resid_pre</code>, 512 features, k=32. For each seed pair, match each live feature in run A to its best partner in run B and record the cosine of the matched decoder directions.</p>
 <table>
 <thead>
 <tr>
-<th>Condition</th>
-<th style="text-align: right;">Median best-match cosine</th>
-<th style="text-align: right;">Stability fraction at ≥ 0.9</th>
+<th style="text-align: right;">Training tokens</th>
+<th style="text-align: right;">Mean dead-feature ratio</th>
+<th style="text-align: right;">Live-only median best-match cosine</th>
+<th style="text-align: right;">Features ≥ 0.9</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Layer 0, 128 features, full matrix</td>
-<td style="text-align: right;">0.095</td>
-<td style="text-align: right;">0.16%</td>
-</tr>
-<tr>
-<td>Layer 0, 128 features, <strong>live-only</strong></td>
-<td style="text-align: right;"><strong>0.500</strong></td>
-<td style="text-align: right;">0.48%</td>
-</tr>
-<tr>
-<td>Layer 6, 128 features, live-only</td>
-<td style="text-align: right;">0.323</td>
-<td style="text-align: right;">0.00%</td>
-</tr>
-<tr>
-<td>Layer 6, 512 features, live-only</td>
+<td style="text-align: right;">992 (openwebtext sample)</td>
+<td style="text-align: right;">0.65</td>
 <td style="text-align: right;">0.257</td>
-<td style="text-align: right;">0.00%</td>
+<td style="text-align: right;">0.0%</td>
+</tr>
+<tr>
+<td style="text-align: right;"><strong>30,186 (pile-1k)</strong></td>
+<td style="text-align: right;"><strong>0.085</strong></td>
+<td style="text-align: right;"><strong>0.472</strong></td>
+<td style="text-align: right;"><strong>4.33%</strong></td>
 </tr>
 </tbody>
 </table>
-<p><strong>No condition crosses the 0.9 cosine threshold implicit in the "the X feature" claims that pervade the SAE literature.</strong> Deeper layers and larger dictionaries produce <em>less</em> stability — consistent with a degenerate-basis story (a richer manifold has more equivalent overcomplete solutions).</p>
-<h2 id="why-i-think-this-matters">Why I think this matters<a class="headerlink" href="#why-i-think-this-matters" title="Permanent link">&para;</a></h2>
-<p>The mech-interp community treats SAE features as approximations to intrinsic model properties. Anthropic's "Towards Monosemanticity" speaks of <em>the</em> X feature of a model. Auto-interpretability pipelines build natural-language descriptions of individual features and treat them as durable handles. This implicitly assumes SAE training is approximately deterministic up to seed — that two SAEs trained with identical hyperparameters and different initialisations recover (modulo permutation and small noise) the same dictionary.</p>
-<p>This work tests that assumption directly. At the scales tested, it fails. Even among live features (excluding the dead-feature confound), the matched cosines are far below the threshold needed to call two features "the same direction."</p>
-<h2 id="what-this-implies">What this implies<a class="headerlink" href="#what-this-implies" title="Permanent link">&para;</a></h2>
+<p>The first row is easy to dismiss: at ~1000 tokens, 65% of features never activate (they stay at their random init), which drags the matched cosines down. So I ran the <strong>scale control</strong> — same config, 30× the tokens. The dead-feature ratio collapses to 8.5%, and the median best-match cosine rises from 0.26 to 0.47.</p>
+<p>Two honest conclusions from that single control:</p>
+<ol>
+<li><strong>The instability is not purely a low-data artifact.</strong> Removing the confound and adding 30× data still leaves the median at 0.47 with only 4% of features reaching 0.9.</li>
+<li><strong>Reproducibility is clearly scale-sensitive and rising.</strong> 0.26 → 0.47 going 30×. I cannot rule out that it continues toward 0.9 at production scale. That extrapolation is the key open question, not a settled result.</li>
+</ol>
+<p>(For context: two random unit vectors in 768-dim have cosine ≈ 0 with std 0.036, so a <em>median</em> matched cosine of 0.47 is ~13σ above chance — live features are genuinely partially aligned across seeds, not independent. "Partial alignment that improves with scale" is the accurate description, not "the dictionaries are unrelated.")</p>
+<h2 id="why-i-think-its-worth-measuring">Why I think it's worth measuring<a class="headerlink" href="#why-i-think-its-worth-measuring" title="Permanent link">&para;</a></h2>
+<p>The mech-interp community often treats SAE features as approximations to intrinsic model properties — "the X feature", durable natural-language labels assigned from a single training run, crosscoder feature-matching across models. All of that implicitly assumes seed-stability. The amount of seed-stability is rarely reported. This is a small attempt to put a number on it, with a scale control so the number isn't just a training-budget artifact.</p>
+<p>If the ~0.47-at-30K-tokens figure holds up (and especially if it plateaus below 0.9 at larger scale, which I have <strong>not</strong> shown), then single-run feature labels are partly run-specific, and cross-seed / cross-model feature comparisons should compare distributions rather than specific paired features. If instead it climbs to ~0.9 at production scale, the concern dissolves. I genuinely don't know which, and the honest contribution here is the scale-control method plus the two data points.</p>
+<h2 id="caveats-these-are-load-bearing">Caveats (these are load-bearing)<a class="headerlink" href="#caveats-these-are-load-bearing" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Single-run feature labels</strong> ("feature 47 detects bananas") are training-run properties, not model properties, unless the run is specified.</li>
-<li><strong>Auto-interp comparisons</strong> across seeds need to match feature <em>distributions</em>, not specific paired features.</li>
-<li><strong>Crosscoder-based model diffing</strong> (Lindsey et al., 2024) is comparing feature distributions between models when each model's features are already seed-unstable — the diff signal is mixed with seed noise.</li>
-</ul>
-<h2 id="caveats-this-is-a-preliminary-report">Caveats — this is a preliminary report<a class="headerlink" href="#caveats-this-is-a-preliminary-report" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>1 model</strong> (GPT-2 small). Should test gpt2-medium, Pythia, Llama at minimum.</li>
-<li><strong>~1000 training tokens</strong> is 3 orders of magnitude below published SAEs (which use ≥ 10⁶). Larger scale will reduce the dead-feature confound but unlikely to close the 0.5 → 0.9 gap.</li>
-<li><strong>1 SAE recipe</strong> (Top-K). L1 SAEs, JumpReLU SAEs, gated SAEs may have different seed-stability profiles.</li>
-<li><strong>No statistical testing</strong> yet — bootstrap CIs on the median + permutation test against random-vector baseline still needed.</li>
-<li><strong>Refusal-detection metric is keyword-based</strong> and noisy.</li>
+<li><strong>Small scale.</strong> 30K tokens is still 30–30,000× below production SAEs. The upward trend with scale means the headline number is a lower bound on reproducibility, not an upper bound.</li>
+<li><strong>One model, one recipe.</strong> GPT-2 small, Top-K SAEs. L1 / JumpReLU / gated SAEs and larger models may differ.</li>
+<li><strong>Greedy bipartite matching</strong> (no scipy in the env) — an upper bound on the optimal assignment; true Hungarian matching would give equal-or-higher cosines, i.e. the real reproducibility is <em>at least</em> this good.</li>
+<li><strong>No statistical testing</strong> — bootstrap CIs and a permutation test against the random baseline are still TODO.</li>
+<li><strong>n=5 seeds.</strong> Enough to see the effect, not enough for tight intervals.</li>
 </ul>
 <h2 id="reproducibility">Reproducibility<a class="headerlink" href="#reproducibility" title="Permanent link">&para;</a></h2>
-<p>Every run wrote an <code>environment.json</code> artifact with <code>torch</code>/<code>numpy</code>/<code>transformer-lens</code> versions, the <code>uv.lock</code> SHA-256, the seed, and a sample of model weight hashes. From a fresh clone:</p>
+<p>From a fresh clone (≈5 min on a 2024 Apple Silicon laptop for the small run; ~15 min for the scale control):</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>sync<span class="w"> </span>--group<span class="w"> </span>dev<span class="w"> </span>--extra<span class="w"> </span>interp
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>mech<span class="w"> </span>sweep<span class="w"> </span>--base<span class="w"> </span>experiments/polysemanticity.yaml<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--axis<span class="w"> </span><span class="s2">&quot;parameters.seed=1,2,3,4,5&quot;</span><span class="w"> </span>--execute
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>mech<span class="w"> </span>analyze-sae-stability<span class="w"> </span>--runs<span class="w"> </span><span class="m">1</span>,2,3,4,5<span class="w"> </span>--live-only
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1"># small-scale (original):</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>mech<span class="w"> </span>sweep<span class="w"> </span>--base<span class="w"> </span>experiments/polysemanticity_sae_layer6_512.yaml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--axis<span class="w"> </span><span class="s2">&quot;parameters.seed=1,2,3,4,5&quot;</span><span class="w"> </span>--execute
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># scale control (30x tokens, pile-1k):</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>mech<span class="w"> </span>download-corpus<span class="w"> </span>--name<span class="w"> </span>pile-1k
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>mech<span class="w"> </span>sweep<span class="w"> </span>--base<span class="w"> </span>experiments/polysemanticity_sae_layer6_512_scale.yaml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span>--axis<span class="w"> </span><span class="s2">&quot;parameters.seed=1,2,3,4,5&quot;</span><span class="w"> </span>--execute
 </span></code></pre></div>
-<p>Wall-clock: ~5 minutes on a 2024-era Apple Silicon MBP.</p>
-<p>The platform I built to run this lives at https://github.com/ashlrai/mechanistic-interpretability. It's MIT-licensed, has 15 experiment families, and a Gradio demo. The same <code>mech sweep</code> pattern would generalize to the publishable scope (3 models × 5 layers × 4 sizes × 20 seeds = ~1200 runs, ~1.7 GPU-hours on an A100).</p>
-<h2 id="related-platform-finding-acdc-late-layer-bias-on-ioi">Related platform finding: ACDC late-layer bias on IOI<a class="headerlink" href="#related-platform-finding-acdc-late-layer-bias-on-ioi" title="Permanent link">&para;</a></h2>
-<p>While building the platform I also ran our edge-level ACDC approximation (KL-weighted-by-layer-gap, not true path patching) on the canonical Wang et al. 2022 IOI task. <strong>It recovers 3 of 12 canonical heads — the two backup_name_movers (10,7) + (11,10) at 100% recall plus name_mover (10,0).</strong> It misses the entire upstream chain (s_inhibition L7-8, induction L5, duplicate_token L0-3). Faithfulness 0.259, flagged as partial.</p>
-<p>This is consistent with the approximation's documented late-layer bias: KL weighted by 1/layer_gap favors writer heads near the answer, misses long-range causal chains. The platform reports it honestly rather than claiming "the IOI circuit" — see <code>docs/investigations/ioi_canonical_reproduction.md</code>.</p>
-<p>This matters here because the same algorithm was used in the abliteration audit below — the negative result holds, but specific head attributions in that audit should be treated as candidates not conclusions.</p>
-<h2 id="related-platform-finding-abliteration-recipe-is-size-dependent">Related platform finding: abliteration recipe is size-dependent<a class="headerlink" href="#related-platform-finding-abliteration-recipe-is-size-dependent" title="Permanent link">&para;</a></h2>
-<p>While Investigation #1 set out to audit the standard Arditi abliteration recipe on Qwen2.5-1.5B-Instruct and found it <strong>fails</strong> (extraction quality 4.1, but circuit faithfulness 0.041 — formally rejected), the follow-up multi-model audit produces a much more interesting pattern:</p>
-<table>
-<thead>
-<tr>
-<th>Model</th>
-<th style="text-align: center;">Size</th>
-<th style="text-align: right;">Best coeff</th>
-<th style="text-align: right;">Refusal shift</th>
-<th>Recipe verdict</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Qwen2-0.5B-Instruct</td>
-<td style="text-align: center;">0.5B</td>
-<td style="text-align: right;">−3.0</td>
-<td style="text-align: right;">0.33 → 0.00</td>
-<td><strong>Works fully</strong></td>
-</tr>
-<tr>
-<td>Qwen2.5-0.5B-Instruct</td>
-<td style="text-align: center;">0.5B</td>
-<td style="text-align: right;">−1 to −3 graded</td>
-<td style="text-align: right;">0.67 → 0.33</td>
-<td><strong>Works partially</strong></td>
-</tr>
-<tr>
-<td>Qwen2.5-1.5B-Instruct</td>
-<td style="text-align: center;">1.5B</td>
-<td style="text-align: right;">−3.0 only (backfire)</td>
-<td style="text-align: right;">0.33 → 0.67</td>
-<td><strong>Fails</strong></td>
-</tr>
-<tr>
-<td>Qwen2.5-3B-Instruct</td>
-<td style="text-align: center;">3B</td>
-<td style="text-align: right;">no negative coeff effect</td>
-<td style="text-align: right;">(suppression gone)</td>
-<td><strong>Fails — amplify only</strong></td>
-</tr>
-</tbody>
-</table>
-<p><strong>The ability to suppress refusal via single-layer additive steering degrades monotonically with Qwen scale.</strong> 0.5B models give graded suppression (the canonical recipe-working pattern); 1.5B saturates and backfires; 3B loses suppression entirely. The transition happens at sizes the community's abliteration writeups typically target (3-9B). If the pattern extrapolates, the recipe has an implicit size ceiling nobody has characterised.</p>
-<p>Full 4-stage detail at <code>docs/investigations/refusal_audit.md</code>.</p>
+<p>Raw pairwise data: <code>docs/publications/sae_replication_artifacts/</code> (small-scale) and <code>scale_control.json</code> (30× run). Every run records an <code>environment.json</code> with library versions, <code>uv.lock</code> SHA-256, seed, and model weight hash.</p>
+<p>Platform: https://github.com/ashlrai/mechanistic-interpretability (MIT). The <code>mech sweep</code> pattern generalizes to the publishable scope (multiple models × layers × dictionary sizes × ≥20 seeds × ≥1M tokens, ≈a couple GPU-hours).</p>
+<h2 id="two-related-findings-from-the-same-platform">Two related findings from the same platform<a class="headerlink" href="#two-related-findings-from-the-same-platform" title="Permanent link">&para;</a></h2>
+<p><strong>Abliteration recipe degrades with model scale (4 Qwen models).</strong> Auditing the standard Arditi/RepE refusal-direction recipe across Qwen 0.5B→3B: single-layer additive steering suppresses refusal fully at 0.5B (refusal 0.33→0.00), partially at 0.5B-newer (0.67→0.33), backfires at 1.5B (0.33→0.67), and loses suppression entirely at 3B (a 4-layer CAA sweep finds no layer that suppresses). Each model's refusal direction extracts cleanly (separation quality 2.3–4.3) — extraction quality and steering efficacy are decoupled. <strong>Caveat: 3 test prompts per model with keyword-based refusal detection — coarse; the per-model numbers are noisy, but the monotonic direction across 4 models is the signal.</strong> Detail: <code>docs/investigations/refusal_audit.md</code>.</p>
+<p><strong>Edge-level ACDC recovers late-layer IOI heads only.</strong> On the canonical Wang et al. 2022 IOI task, our KL-weighted edge-ACDC approximation recovers 3 of 12 canonical heads (both backup name-movers + one name-mover at 100%/33%), misses the entire upstream chain (s-inhibition, induction, duplicate-token), faithfulness 0.26. This is a documented late-layer bias of the approximation, reported honestly rather than as "the circuit". Detail: <code>docs/investigations/ioi_canonical_reproduction.md</code>.</p>
 <h2 id="asks">Asks<a class="headerlink" href="#asks" title="Permanent link">&para;</a></h2>
 <ol>
-<li><strong>If you've trained SAEs and have your own seed-stability data, please compare notes.</strong> Especially curious about larger models + L1 / JumpReLU recipes.</li>
-<li><strong>If you have GPU access and want to run the publishable-minimum version</strong>, the <code>mech sweep</code> command above generalizes to it in one line. Happy to help set it up.</li>
-<li><strong>If this result is already known and I missed the citation</strong>, please link it. I searched and didn't find a systematic seed-stability test; happy to be corrected.</li>
+<li><strong>If you have seed-stability data on real-scale SAEs, please share it</strong> — the one number I most want is the live-only median best-match cosine at ≥1M tokens. That settles the extrapolation.</li>
+<li><strong>If you have GPU budget</strong>, the <code>mech sweep</code> command scales to the proper experiment (multiple models/layers/sizes, 20+ seeds, 1M+ tokens) in one line.</li>
+<li><strong>If a systematic SAE seed-stability measurement already exists, link it</strong> — I searched and didn't find one; happy to be corrected and to defer.</li>
 </ol>
 <p>— Mason Wyatt</p>
 

@@ -1,0 +1,17 @@
+{
+  "purpose": "Scale-control for SAE seed-stability finding: re-run layer6-512 condition at 30x token scale to test whether cross-seed instability is a low-data artifact.",
+  "config": {"model": "gpt2-small", "hook_site": "blocks.6.hook_resid_pre", "n_features": 512, "k": 32, "epochs": 10, "tokens_trained": 30186, "seeds": [1,2,3,4,5], "corpus": "pile-1k"},
+  "result": {
+    "mean_dead_ratio": 0.085,
+    "live_only_median_cosine": 0.472,
+    "above_0_9_count": 202,
+    "above_0_9_total": 4661,
+    "above_0_9_fraction": 0.0433
+  },
+  "comparison_original_992_tokens": {
+    "mean_dead_ratio": 0.648,
+    "live_only_median_cosine": 0.257,
+    "above_0_9_fraction": 0.0
+  },
+  "conclusion": "Cross-seed feature instability is NOT purely a low-data artifact. Removing the dead-feature confound (65%->8.5%) and training on 30x more data raises the live-only median best-match cosine from 0.257 to 0.472, but it remains far below the 0.9 'same feature' threshold (only 4.33% of features cross it). Reproducibility improves monotonically with scale; whether it reaches 0.9 at production scale (1M-1B tokens) is untested and is the key open question."
+}

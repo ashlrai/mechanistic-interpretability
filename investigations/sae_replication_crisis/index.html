@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#investigation-3-the-sae-replication-crisis-check" class="md-skip">
+        <a href="#investigation-3-sae-seed-reproducibility-vs-training-scale" class="md-skip">
           Skip to content
         </a>
       
@@ -1214,8 +1214,22 @@
   
 
 
-<h1 id="investigation-3-the-sae-replication-crisis-check">Investigation #3 — The SAE Replication Crisis Check<a class="headerlink" href="#investigation-3-the-sae-replication-crisis-check" title="Permanent link">&para;</a></h1>
-<p><strong>Date:</strong> 2026-05-27
+<h1 id="investigation-3-sae-seed-reproducibility-vs-training-scale">Investigation #3 — SAE Seed-Reproducibility vs Training Scale<a class="headerlink" href="#investigation-3-sae-seed-reproducibility-vs-training-scale" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>2026-05-28 update — scale control added.</strong> The original framing ("replication
+crisis") was overstated and partly confounded by under-training. A 30× scale
+control (pile-1k, 30,186 tokens, layer 6, 512 features) shows the dead-feature
+ratio collapses 0.65 → 0.085 and the live-only median best-match cosine RISES
+0.257 → <strong>0.472</strong>, with <strong>4.33%</strong> of features now crossing the 0.9 bar (up from
+0%). So: reproducibility is <strong>scale-sensitive and improving</strong>, NOT a fixed
+crisis — but it remains far from the "same feature" bar even at 30K tokens.
+Whether it reaches 0.9 at production scale (1M–1B tokens) is untested and is the
+real open question. The accurate, postable framing lives in
+<code>docs/publications/lesswrong_post.md</code>; raw control data in
+<code>docs/publications/sae_replication_artifacts/scale_control.json</code>. The original
+small-scale numbers below stand as the lower-scale data point.</p>
+</blockquote>
+<p><strong>Date:</strong> 2026-05-27 (scale control 2026-05-28)
 <strong>Model:</strong> gpt2-small, layer 0 residual stream (<code>blocks.0.hook_resid_pre</code>)
 <strong>Setup:</strong> 128 features, k=8 Top-K SAE, 100-doc corpus, ~1000 tokens per run</p>
 <hr />

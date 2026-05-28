@@ -947,7 +947,7 @@
 <p>Distribution draft for the v0.1.0-preview release. Pick channels and adapt — these are starting points, not finished posts.</p>
 <hr />
 <h2 id="twitter-x-thread-10-tweets">Twitter / X thread (10 tweets)<a class="headerlink" href="#twitter-x-thread-10-tweets" title="Permanent link">&para;</a></h2>
-<p><strong>1/10</strong> Quietly built a local mechanistic-interpretability research platform over the last few weeks. Just released v0.1.0-preview. Two real findings inside (one publishable negative result on abliteration, one on SAE seed-stability). 19-second quickstart. 🧵</p>
+<p><strong>1/10</strong> Quietly built a local mechanistic-interpretability research platform over the last few weeks. Just released v0.1.0-preview. Two measured findings inside (SAE seed-reproducibility vs training scale; abliteration recipe degrading with model size). 19-second quickstart. 🧵</p>
 <p><strong>2/10</strong> Stack:
 - 15 experiment families (circuit_patching, SAE, ACDC-edge, attribution_patching, refusal_direction, crosscoders, causal_scrubbing, ...)
 - 37 CLI commands, agentic followup loop
@@ -956,10 +956,9 @@
 - All local, all reproducible</p>
 <p><strong>3/10</strong> Try it: <code>pip install</code> → <code>mech demo</code> → 19 seconds → 3-panel chart of GPT-2 doing factual recall (DLA + logit lens + circuit patching, on 3 prompts, gpt2-small).</p>
 <p>The demo is the "click here for first experience" most mech-interp tools lack.</p>
-<p><strong>4/10</strong> Headline finding 1 (live in docs/publications/):</p>
-<p>I trained the same SAE 5 times with different seeds. Live-only median best-match cosine: 0.50 at layer 0, 0.32 at layer 6, 0.26 with bigger dictionaries.</p>
-<p><strong>Zero conditions cross the 0.9 "same feature" threshold.</strong></p>
-<p><strong>5/10</strong> This is informative because the SAE literature implicitly assumes feature dictionaries are seed-stable. "The X feature of model M" is a training-run property, not a model property, at the scales I tested.</p>
+<p><strong>4/10</strong> Finding 1: how reproducible are SAE features across seeds?</p>
+<p>Trained GPT-2 small SAEs at 5 seeds. Live-only median cross-seed best-match cosine: 0.26 at 992 tokens → 0.47 at 30K tokens (scale control, dead features 65%→8.5%). Only ~4% of features reach the 0.9 "same feature" bar.</p>
+<p><strong>5/10</strong> So: reproducibility improves with training scale (0.26→0.47 going 30×) but is far from the "same feature" bar even at 30K tokens. Whether it reaches 0.9 at production scale (1M+ tokens) is untested — that's the open question. Not a "crisis," a measured data point with a scale control.</p>
 <p>Full paper draft + reproduce.sh: link below.</p>
 <p><strong>6/10</strong> Headline finding 2: I audited 4 Qwen instruct models from 0.5B to 3B params. The abliteration recipe's ability to suppress refusal <strong>degrades monotonically with scale</strong>:</p>
 <ul>
@@ -983,11 +982,11 @@
 <p><strong>10/10</strong> Repo: https://github.com/ashlrai/mechanistic-interpretability
 Release notes: /releases/tag/v0.1.0-preview
 Docs: https://ashlrai.github.io/mechanistic-interpretability/
-Full SAE replication crisis writeup: /docs/publications/sae_replication_crisis.md</p>
+Full SAE seed-reproducibility writeup: /docs/publications/lesswrong_post.md</p>
 <p>MIT licensed. Issues + PRs open.</p>
 <hr />
 <h2 id="lesswrong-alignmentforum-post">LessWrong / AlignmentForum post<a class="headerlink" href="#lesswrong-alignmentforum-post" title="Permanent link">&para;</a></h2>
-<p>Use the SAE replication crisis writeup at <code>docs/publications/lesswrong_post.md</code> as the primary post. Cross-reference the abliteration audit as a shorter follow-up post a few days later if the first lands well.</p>
+<p>Use the SAE seed-reproducibility writeup at <code>docs/publications/lesswrong_post.md</code> as the primary post. Cross-reference the abliteration audit as a shorter follow-up post a few days later if the first lands well.</p>
 <hr />
 <h2 id="newsletter-blog-submission-targets">Newsletter / blog submission targets<a class="headerlink" href="#newsletter-blog-submission-targets" title="Permanent link">&para;</a></h2>
 <ul>
