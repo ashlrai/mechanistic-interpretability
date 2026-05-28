@@ -14,7 +14,28 @@
 
 This is a **model-size-dependent** finding. The abliteration recipe is not universally broken; it works on small Qwen models. The transition between "works" (0.5B) and "fails" (1.5B) happens within the Qwen family at sizes most community abliterators target.
 
-Stages 2-4 of the Qwen2-0.5B audit are queued to localize which layer + which heads — the prediction is that the canonical Arditi recipe works here exactly as published.
+**Stage 2 (CAA layer sweep, run 79) result:**
+
+| Layer | Extraction quality | Direction norm | Best refusal-rate shift |
+|---:|---:|---:|---:|
+| 6 | 3.54 | 1.6 | 0.000 |
+| **12** | **4.31** | 4.8 | **+0.333** (refusal 0.33 → 0.00 at coeff ∈ {−2, −3}) |
+| 18 | 5.39 | 10.8 | 0.000 |
+| 22 | 3.93 | 21.8 | 0.000 |
+
+Same decoupling of extraction quality and steering effectiveness as on Qwen2.5-1.5B (layer 18 has the highest extraction quality but zero behavioral effect), but **layer 12 actually allows controllable suppression** — at coeff −3.0 refusal drops to 0/3 prompts, at coeff −2.0 it also drops to 0/3 (monotonic in the predicted direction). This is the abliteration-recipe-working pattern.
+
+So the side-by-side picture across the two audited models is:
+
+| Quantity | Qwen2-0.5B (24L) | Qwen2.5-1.5B (28L) |
+|---|---:|---:|
+| Best layer (by behavioural shift) | 12 (mid) | 10 (early-mid) |
+| Best-layer extraction quality | 4.31 | 4.11 |
+| Highest-quality layer | 18 (5.39) | 12 (4.25) |
+| Behavioural effect at best layer, coeff −3 | refusal **0.33 → 0.00** | refusal **0.33 → 0.67** |
+| Recipe verdict | **works** | **fails** |
+
+Stages 3-4 (circuit_patching + causal_scrubbing) would localize the heads. Predicted: the canonical Arditi recipe's circuit hypothesis WILL hold on Qwen2-0.5B (faithfulness > 0.5), contrasting with the 0.041 faithfulness on Qwen2.5-1.5B.
 
 **Implication:** the original Qwen2.5-1.5B "headline" below is correct but narrow. The broader picture is that the recipe's domain of applicability is bounded — works on ≤ 0.5B Qwen, fails on ≥ 1.5B Qwen, transition somewhere in between (Qwen2.5-0.5B audit would tell us).
 
