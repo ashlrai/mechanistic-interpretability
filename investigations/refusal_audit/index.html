@@ -1176,7 +1176,82 @@
 <h2 id="multi-model-update-2026-05-27-second-model-added">Multi-model update (2026-05-27, second model added)<a class="headerlink" href="#multi-model-update-2026-05-27-second-model-added" title="Permanent link">&para;</a></h2>
 <p><strong>Qwen2-0.5B-Instruct (24 layers) Stage 1 result (run 78):</strong> the same single-coefficient steering recipe that FAILED on Qwen2.5-1.5B <strong>succeeds on Qwen2-0.5B-Instruct</strong>. At <code>blocks.12.hook_resid_post</code> with coefficient −3.0, refusal rate drops from 0.33 baseline to <strong>0.00</strong> — all 3 test prompts comply. coeff −2.0 also drops to 0.00. Extraction quality is even higher than on the larger model: <strong>4.311</strong> (vs Qwen2.5-1.5B's 4.105).</p>
 <p>This is a <strong>model-size-dependent</strong> finding. The abliteration recipe is not universally broken; it works on small Qwen models. The transition between "works" (0.5B) and "fails" (1.5B) happens within the Qwen family at sizes most community abliterators target.</p>
-<p>Stages 2-4 of the Qwen2-0.5B audit are queued to localize which layer + which heads — the prediction is that the canonical Arditi recipe works here exactly as published.</p>
+<p><strong>Stage 2 (CAA layer sweep, run 79) result:</strong></p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Layer</th>
+<th style="text-align: right;">Extraction quality</th>
+<th style="text-align: right;">Direction norm</th>
+<th style="text-align: right;">Best refusal-rate shift</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">3.54</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">0.000</td>
+</tr>
+<tr>
+<td style="text-align: right;"><strong>12</strong></td>
+<td style="text-align: right;"><strong>4.31</strong></td>
+<td style="text-align: right;">4.8</td>
+<td style="text-align: right;"><strong>+0.333</strong> (refusal 0.33 → 0.00 at coeff ∈ {−2, −3})</td>
+</tr>
+<tr>
+<td style="text-align: right;">18</td>
+<td style="text-align: right;">5.39</td>
+<td style="text-align: right;">10.8</td>
+<td style="text-align: right;">0.000</td>
+</tr>
+<tr>
+<td style="text-align: right;">22</td>
+<td style="text-align: right;">3.93</td>
+<td style="text-align: right;">21.8</td>
+<td style="text-align: right;">0.000</td>
+</tr>
+</tbody>
+</table>
+<p>Same decoupling of extraction quality and steering effectiveness as on Qwen2.5-1.5B (layer 18 has the highest extraction quality but zero behavioral effect), but <strong>layer 12 actually allows controllable suppression</strong> — at coeff −3.0 refusal drops to 0/3 prompts, at coeff −2.0 it also drops to 0/3 (monotonic in the predicted direction). This is the abliteration-recipe-working pattern.</p>
+<p>So the side-by-side picture across the two audited models is:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th style="text-align: right;">Qwen2-0.5B (24L)</th>
+<th style="text-align: right;">Qwen2.5-1.5B (28L)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Best layer (by behavioural shift)</td>
+<td style="text-align: right;">12 (mid)</td>
+<td style="text-align: right;">10 (early-mid)</td>
+</tr>
+<tr>
+<td>Best-layer extraction quality</td>
+<td style="text-align: right;">4.31</td>
+<td style="text-align: right;">4.11</td>
+</tr>
+<tr>
+<td>Highest-quality layer</td>
+<td style="text-align: right;">18 (5.39)</td>
+<td style="text-align: right;">12 (4.25)</td>
+</tr>
+<tr>
+<td>Behavioural effect at best layer, coeff −3</td>
+<td style="text-align: right;">refusal <strong>0.33 → 0.00</strong></td>
+<td style="text-align: right;">refusal <strong>0.33 → 0.67</strong></td>
+</tr>
+<tr>
+<td>Recipe verdict</td>
+<td style="text-align: right;"><strong>works</strong></td>
+<td style="text-align: right;"><strong>fails</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Stages 3-4 (circuit_patching + causal_scrubbing) would localize the heads. Predicted: the canonical Arditi recipe's circuit hypothesis WILL hold on Qwen2-0.5B (faithfulness &gt; 0.5), contrasting with the 0.041 faithfulness on Qwen2.5-1.5B.</p>
 <p><strong>Implication:</strong> the original Qwen2.5-1.5B "headline" below is correct but narrow. The broader picture is that the recipe's domain of applicability is bounded — works on ≤ 0.5B Qwen, fails on ≥ 1.5B Qwen, transition somewhere in between (Qwen2.5-0.5B audit would tell us).</p>
 <hr />
 <h2 id="headline">Headline<a class="headerlink" href="#headline" title="Permanent link">&para;</a></h2>
