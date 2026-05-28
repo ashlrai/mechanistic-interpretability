@@ -73,13 +73,18 @@ _HF_LICENSE_TAGS = {
 
 
 def _hf_license_frontmatter(raw: str | None) -> str:
-    """Return YAML frontmatter line(s) for a license HF will accept."""
+    """Return a SINGLE YAML frontmatter line for a license HF will accept.
+
+    Must stay single-line: the result is interpolated into a textwrap.dedent
+    f-string block, and a multi-line value would break the dedent alignment
+    (continuation lines have no indentation), rendering the whole README as an
+    indented code block. Non-standard licenses fold to `other`; the original
+    name is surfaced in the README body, not the frontmatter.
+    """
     value = (raw or "other").strip().lower()
     if value in _HF_LICENSE_TAGS:
         return f"license: {value}"
-    # Non-standard (e.g. research-only): use `other` + preserve the real name.
-    safe_name = (raw or "other").strip()
-    return f'license: other\nlicense_name: {safe_name}'
+    return "license: other"
 
 
 def _readme_sae(bundle_name: str, metadata: dict[str, Any], repo_id: str) -> str:
