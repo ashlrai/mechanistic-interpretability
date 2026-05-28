@@ -87,7 +87,9 @@ Most community abliterations target Llama-3.2-3B / Llama-3.2-8B / Gemma-2-9B —
 
 Stages 3-4 (circuit_patching + causal_scrubbing) on the two 0.5B models would formally confirm the recipe's circuit hypothesis holds there (faithfulness > 0.5), then a Qwen2.5-3B audit would localise the transition point.
 
-**Implication:** the original Qwen2.5-1.5B "headline" below is correct but narrow. The broader picture is that the recipe's domain of applicability is bounded — works on ≤ 0.5B Qwen, fails on ≥ 1.5B Qwen, transition somewhere in between (Qwen2.5-0.5B audit would tell us).
+> **Compute note (honest limitation):** Stages 3-4 (circuit_patching, causal_scrubbing) were attempted on Qwen2.5-3B (runs 84/85) and Phi-3-mini 3.8B (run 83) but **OOM-killed on this 128 GB CPU machine** — those families hold the full activation + gradient cache across many hook sites, which exceeds memory at 3B+. The lighter Stage-1/Stage-2 families (refusal_direction sweep, caa_steering) complete at 3B. **This does not weaken the headline:** the Qwen2.5-3B CAA layer sweep (run 82) already established that no layer enables suppression, which is what locks the scale-bounded conclusion. Stage 3-4 head localisation at 3B would be a refinement, not a load-bearing result, and needs a higher-memory machine or an MPS + reduced-batch path.
+
+**Implication:** the original Qwen2.5-1.5B "headline" below is correct but narrow. The broader picture is that the recipe's domain of applicability is bounded — works on ≤ 0.5B Qwen, fails on ≥ 1.5B Qwen, fully fails by 3B (CAA-confirmed across all layers).
 
 ---
 
