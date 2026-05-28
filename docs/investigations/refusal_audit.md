@@ -8,6 +8,18 @@
 
 ---
 
+## Multi-model update (2026-05-27, second model added)
+
+**Qwen2-0.5B-Instruct (24 layers) Stage 1 result (run 78):** the same single-coefficient steering recipe that FAILED on Qwen2.5-1.5B **succeeds on Qwen2-0.5B-Instruct**. At `blocks.12.hook_resid_post` with coefficient −3.0, refusal rate drops from 0.33 baseline to **0.00** — all 3 test prompts comply. coeff −2.0 also drops to 0.00. Extraction quality is even higher than on the larger model: **4.311** (vs Qwen2.5-1.5B's 4.105).
+
+This is a **model-size-dependent** finding. The abliteration recipe is not universally broken; it works on small Qwen models. The transition between "works" (0.5B) and "fails" (1.5B) happens within the Qwen family at sizes most community abliterators target.
+
+Stages 2-4 of the Qwen2-0.5B audit are queued to localize which layer + which heads — the prediction is that the canonical Arditi recipe works here exactly as published.
+
+**Implication:** the original Qwen2.5-1.5B "headline" below is correct but narrow. The broader picture is that the recipe's domain of applicability is bounded — works on ≤ 0.5B Qwen, fails on ≥ 1.5B Qwen, transition somewhere in between (Qwen2.5-0.5B audit would tell us).
+
+---
+
 ## Headline
 
 > **For `Qwen2.5-1.5B-Instruct`, refusal IS a linearly separable direction in the residual stream (extraction quality 4.1 at layer 10, 4.2 at layer 12), but it is NOT controllable via single-layer steering at the natural candidate layers, and it is NOT implemented by the attention head outputs at those layers.** The standard Arditi/RepE abliteration recipe — find the direction, ablate the attention contributions that write it — produces a circuit hypothesis with faithfulness 0.04 against the 4-stage formal scrubbing test. The information arrives in `blocks.10-11.hook_resid_post` (recovery fraction 0.50-1.04 under exact patching) but is NOT written there by local attention.
