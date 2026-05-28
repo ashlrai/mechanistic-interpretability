@@ -220,7 +220,7 @@ def generate_refusal_circuit(model: str, n_layers: int, slug: str) -> dict:  # t
         ),
         "parameters": {
             "model": model,
-            "patch_pairs": CIRCUIT_PAIRS,
+            "prompt_pairs": CIRCUIT_PAIRS,
             "hook_sites": hook_sites,
             "artifact_policy": {
                 "retain_activation_tensors": False,
