@@ -53,15 +53,18 @@ At `blocks.12.hook_resid_post`, extraction quality 3.858, **baseline refusal 0.6
 
 **Recipe WORKS on Qwen2.5-0.5B** — graded suppression across all negative coefficients (the canonical Arditi pattern), refusal halved from 0.67 to 0.33.
 
-### Three-model summary
+### Four-model summary
 
-| Model | Size | Best coeff | Refusal shift | Recipe verdict |
-|---|:---:|---:|---:|---|
-| Qwen2-0.5B-Instruct | 0.5B | −3.0 | 0.33 → 0.00 | **Works fully** |
-| Qwen2.5-0.5B-Instruct | 0.5B | −1 to −3 (graded) | 0.67 → 0.33 | **Works partially** |
-| Qwen2.5-1.5B-Instruct | 1.5B | −3.0 only (backfire) | 0.33 → 0.67 | **Fails** |
+| Model | Size | Hook | Extr. quality | Behavioural pattern under steering | Recipe verdict |
+|---|:---:|---|---:|---|---|
+| Qwen2-0.5B-Instruct | 0.5B | blocks.12.resid_post | 4.311 | coeff −3 → refusal 0.33 → 0.00 (monotonic) | **Works fully** |
+| Qwen2.5-0.5B-Instruct | 0.5B | blocks.12.resid_post | 3.858 | coeff −1..−3 → 0.67 → 0.33 (graded) | **Works partially** |
+| Qwen2.5-1.5B-Instruct | 1.5B | blocks.10.resid_post | 4.105 | coeff −3 only → 0.33 → 0.67 (saturating backfire) | **Fails** |
+| Qwen2.5-3B-Instruct | 3B | blocks.18.resid_post | 2.329 | coeff +2/+3 → 0.33 → 0.67; negative coeffs no effect | **Fails (amplify-only)** |
 
-**The discriminating evidence points at scale, not generation.** Both 0.5B Qwen models show the recipe-working pattern (negative coefficients monotonically reduce refusal). The 1.5B model shows only a saturating backfire at the extreme coefficient. Same Qwen2.5 generation, opposite behaviours at 0.5B vs 1.5B.
+**The 4-point trend across Qwen scale is consistent**: as model size grows, the single-layer additive-direction recipe loses the ability to *suppress* refusal. The 0.5B models give graded suppression; the 1.5B model gives a saturating backfire; the 3B model loses suppression entirely (negative coefficients are dead) but the direction-sign is still correct (positive coefficients increase refusal). Extraction quality also degrades from 4.3 → 2.3 across the same scale at the default hook layer, though the Qwen2.5-1.5B CAA sweep showed extraction quality can be recovered at a different layer; a Qwen2.5-3B CAA sweep is needed to confirm whether *any* layer enables suppression in the 3B model.
+
+This 4-point pattern is the strongest evidence yet that the abliteration recipe's domain of applicability is bounded by scale within the Qwen family. The community's typical abliteration targets (3-9B) are above the demonstrated working range.
 
 ### Implication for the abliteration literature
 
