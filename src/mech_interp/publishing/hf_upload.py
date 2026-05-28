@@ -59,6 +59,29 @@ class HubArtifactBundle:
 # ---------------------------------------------------------------------------
 
 
+# HuggingFace model-card YAML validates `license:` against a controlled
+# vocabulary; any non-recognised value (e.g. "research-only") 400s the
+# validate-yaml endpoint and aborts the upload. Map known SPDX-ish ids
+# through, fold everything else to "other" (HF's escape hatch), and keep the
+# human-readable original in the card body via `license_name`.
+_HF_LICENSE_TAGS = {
+    "mit", "apache-2.0", "bsd-3-clause", "bsd-2-clause", "gpl-3.0", "gpl-2.0",
+    "lgpl-3.0", "agpl-3.0", "cc-by-4.0", "cc-by-sa-4.0", "cc-by-nc-4.0",
+    "cc-by-nc-sa-4.0", "cc0-1.0", "cc", "openrail", "bigscience-openrail-m",
+    "creativeml-openrail-m", "llama2", "llama3", "gemma", "other", "unknown",
+}
+
+
+def _hf_license_frontmatter(raw: str | None) -> str:
+    """Return YAML frontmatter line(s) for a license HF will accept."""
+    value = (raw or "other").strip().lower()
+    if value in _HF_LICENSE_TAGS:
+        return f"license: {value}"
+    # Non-standard (e.g. research-only): use `other` + preserve the real name.
+    safe_name = (raw or "other").strip()
+    return f'license: other\nlicense_name: {safe_name}'
+
+
 def _readme_sae(bundle_name: str, metadata: dict[str, Any], repo_id: str) -> str:
     """Generate HuggingFace-flavoured README for an SAE bundle."""
     spec = metadata.get("spec", {})
@@ -80,7 +103,7 @@ def _readme_sae(bundle_name: str, metadata: dict[str, Any], repo_id: str) -> str
 
     return textwrap.dedent(f"""\
         ---
-        license: {metadata.get("license", "research-only")}
+        {_hf_license_frontmatter(metadata.get("license"))}
         tags:
           - mechanistic-interpretability
           - sparse-autoencoder
@@ -157,7 +180,7 @@ def _readme_steering(bundle_name: str, metadata: dict[str, Any], repo_id: str) -
 
     return textwrap.dedent(f"""\
         ---
-        license: {license_}
+        {_hf_license_frontmatter(license_)}
         tags:
           - mechanistic-interpretability
           - steering-vector
@@ -215,7 +238,7 @@ def _readme_investigation(bundle_name: str, metadata: dict[str, Any], repo_id: s
 
     return textwrap.dedent(f"""\
         ---
-        license: {license_}
+        {_hf_license_frontmatter(license_)}
         tags:
           - mechanistic-interpretability
           - investigation
