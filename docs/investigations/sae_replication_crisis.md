@@ -1,6 +1,19 @@
-# Investigation #3 — The SAE Replication Crisis Check
+# Investigation #3 — SAE Seed-Reproducibility vs Training Scale
 
-**Date:** 2026-05-27
+> **2026-05-28 update — scale control added.** The original framing ("replication
+> crisis") was overstated and partly confounded by under-training. A 30× scale
+> control (pile-1k, 30,186 tokens, layer 6, 512 features) shows the dead-feature
+> ratio collapses 0.65 → 0.085 and the live-only median best-match cosine RISES
+> 0.257 → **0.472**, with **4.33%** of features now crossing the 0.9 bar (up from
+> 0%). So: reproducibility is **scale-sensitive and improving**, NOT a fixed
+> crisis — but it remains far from the "same feature" bar even at 30K tokens.
+> Whether it reaches 0.9 at production scale (1M–1B tokens) is untested and is the
+> real open question. The accurate, postable framing lives in
+> `docs/publications/lesswrong_post.md`; raw control data in
+> `docs/publications/sae_replication_artifacts/scale_control.json`. The original
+> small-scale numbers below stand as the lower-scale data point.
+
+**Date:** 2026-05-27 (scale control 2026-05-28)
 **Model:** gpt2-small, layer 0 residual stream (`blocks.0.hook_resid_pre`)
 **Setup:** 128 features, k=8 Top-K SAE, 100-doc corpus, ~1000 tokens per run
 

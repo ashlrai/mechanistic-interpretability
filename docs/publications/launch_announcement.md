@@ -6,7 +6,7 @@ Distribution draft for the v0.1.0-preview release. Pick channels and adapt — t
 
 ## Twitter / X thread (10 tweets)
 
-**1/10** Quietly built a local mechanistic-interpretability research platform over the last few weeks. Just released v0.1.0-preview. Two real findings inside (one publishable negative result on abliteration, one on SAE seed-stability). 19-second quickstart. 🧵
+**1/10** Quietly built a local mechanistic-interpretability research platform over the last few weeks. Just released v0.1.0-preview. Two measured findings inside (SAE seed-reproducibility vs training scale; abliteration recipe degrading with model size). 19-second quickstart. 🧵
 
 **2/10** Stack:
 - 15 experiment families (circuit_patching, SAE, ACDC-edge, attribution_patching, refusal_direction, crosscoders, causal_scrubbing, ...)
@@ -19,13 +19,11 @@ Distribution draft for the v0.1.0-preview release. Pick channels and adapt — t
 
 The demo is the "click here for first experience" most mech-interp tools lack.
 
-**4/10** Headline finding 1 (live in docs/publications/):
+**4/10** Finding 1: how reproducible are SAE features across seeds?
 
-I trained the same SAE 5 times with different seeds. Live-only median best-match cosine: 0.50 at layer 0, 0.32 at layer 6, 0.26 with bigger dictionaries.
+Trained GPT-2 small SAEs at 5 seeds. Live-only median cross-seed best-match cosine: 0.26 at 992 tokens → 0.47 at 30K tokens (scale control, dead features 65%→8.5%). Only ~4% of features reach the 0.9 "same feature" bar.
 
-**Zero conditions cross the 0.9 "same feature" threshold.**
-
-**5/10** This is informative because the SAE literature implicitly assumes feature dictionaries are seed-stable. "The X feature of model M" is a training-run property, not a model property, at the scales I tested.
+**5/10** So: reproducibility improves with training scale (0.26→0.47 going 30×) but is far from the "same feature" bar even at 30K tokens. Whether it reaches 0.9 at production scale (1M+ tokens) is untested — that's the open question. Not a "crisis," a measured data point with a scale control.
 
 Full paper draft + reproduce.sh: link below.
 
@@ -58,7 +56,7 @@ Faithfulness 0.26 — flagged as partial. Honest validation > optimistic spin.
 **10/10** Repo: https://github.com/ashlrai/mechanistic-interpretability
 Release notes: /releases/tag/v0.1.0-preview
 Docs: https://ashlrai.github.io/mechanistic-interpretability/
-Full SAE replication crisis writeup: /docs/publications/sae_replication_crisis.md
+Full SAE seed-reproducibility writeup: /docs/publications/lesswrong_post.md
 
 MIT licensed. Issues + PRs open.
 
@@ -66,7 +64,7 @@ MIT licensed. Issues + PRs open.
 
 ## LessWrong / AlignmentForum post
 
-Use the SAE replication crisis writeup at `docs/publications/lesswrong_post.md` as the primary post. Cross-reference the abliteration audit as a shorter follow-up post a few days later if the first lands well.
+Use the SAE seed-reproducibility writeup at `docs/publications/lesswrong_post.md` as the primary post. Cross-reference the abliteration audit as a shorter follow-up post a few days later if the first lands well.
 
 ---
 
