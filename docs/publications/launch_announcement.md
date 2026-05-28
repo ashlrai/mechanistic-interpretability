@@ -29,13 +29,15 @@ I trained the same SAE 5 times with different seeds. Live-only median best-match
 
 Full paper draft + reproduce.sh: link below.
 
-**6/10** Headline finding 2: I ran a full 4-stage abliteration audit on Qwen2.5-1.5B-Instruct.
+**6/10** Headline finding 2: I audited 3 Qwen instruct models with the same 4-stage pipeline. The abliteration recipe is **size-dependent**:
 
-- Direction extracted: quality 4.105 (clean separation)
-- Layer-10 single-coefficient steering: doesn't decrease refusal
-- Circuit hypothesis "L9+L10 attn implement refusal": **faithfulness 0.041, REJECTED**
+- Qwen2-0.5B:   coeff −3 → refusal 0.33 → 0.00  **WORKS**
+- Qwen2.5-0.5B: coeff −1..−3 graded → 0.67 → 0.33  **WORKS**
+- Qwen2.5-1.5B: coeff −3 → refusal 0.33 → 0.67  **FAILS (backfires)**
 
-**7/10** Mechanistic evidence: the refusal info is in resid_post at L10-11 (recovery 0.5-1.0), but the local attention heads at those layers carry almost none of it (recovery 0.02-0.13). MLPs probably write it — the standard abliteration recipe targets the wrong site.
+**7/10** Same recipe, same Qwen family. Both 0.5B models give the canonical recipe-working pattern (monotonic suppression as coefficient becomes more negative). The 1.5B model fails. The transition happens between 0.5B and 1.5B — exactly where the community's typical abliteration targets start.
+
+Stage 4 scrubbing on Qwen2.5-1.5B formally rejects the L9+L10 attn circuit hypothesis: faithfulness **0.041**. Mechanistic evidence: refusal info lives in resid_post at L10-11 (recovery 0.5-1.0) but attention heads at those layers carry almost none (0.02-0.13). MLPs probably write it.
 
 **8/10** Headline finding 3 (bonus): I ran our edge-level ACDC on the canonical Wang et al. 2022 IOI task on gpt2-small.
 

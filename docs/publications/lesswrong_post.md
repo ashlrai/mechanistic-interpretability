@@ -58,6 +58,20 @@ This is consistent with the approximation's documented late-layer bias: KL weigh
 
 This matters here because the same algorithm was used in the abliteration audit below — the negative result holds, but specific head attributions in that audit should be treated as candidates not conclusions.
 
+## Related platform finding: abliteration recipe is size-dependent
+
+While Investigation #1 set out to audit the standard Arditi abliteration recipe on Qwen2.5-1.5B-Instruct and found it **fails** (extraction quality 4.1, but circuit faithfulness 0.041 — formally rejected), the follow-up multi-model audit produces a much more interesting pattern:
+
+| Model | Size | Best coeff | Refusal shift | Recipe verdict |
+|---|:---:|---:|---:|---|
+| Qwen2-0.5B-Instruct | 0.5B | −3.0 | 0.33 → 0.00 | **Works fully** |
+| Qwen2.5-0.5B-Instruct | 0.5B | −1 to −3 graded | 0.67 → 0.33 | **Works partially** |
+| Qwen2.5-1.5B-Instruct | 1.5B | −3.0 only (backfire) | 0.33 → 0.67 | **Fails** |
+
+**Both 0.5B Qwen models respond to the recipe; the 1.5B model doesn't.** The transition happens within a single model family, at sizes the community's abliteration writeups typically target (3-9B). If the pattern extrapolates, the recipe has an implicit size ceiling nobody has characterised.
+
+Full 4-stage detail at `docs/investigations/refusal_audit.md`.
+
 ## Asks
 
 1. **If you've trained SAEs and have your own seed-stability data, please compare notes.** Especially curious about larger models + L1 / JumpReLU recipes.
