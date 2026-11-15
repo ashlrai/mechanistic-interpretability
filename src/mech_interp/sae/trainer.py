@@ -74,7 +74,7 @@ def train_top_k_sae(
     sae.to(device)
     # ``sae.parameters()`` returns an Iterator[Parameter] at runtime; the typed
     # proxy on TopKSAE returns ``object`` so we cast through Any here.
-    optimizer = torch.optim.Adam(sae.parameters(), lr=learning_rate)  # type: ignore[arg-type]
+    optimizer = torch.optim.Adam(sae.parameters(), lr=learning_rate)  # type: ignore[arg-type, unused-ignore]
 
     activations = activations.detach()
     history = TrainingHistory(
@@ -97,7 +97,7 @@ def train_top_k_sae(
             recon, _ = sae(batch)
             loss = torch.mean((batch - recon) ** 2)
             optimizer.zero_grad()
-            loss.backward()  # type: ignore[no-untyped-call]
+            loss.backward()  # type: ignore[no-untyped-call, unused-ignore]
             optimizer.step()
             epoch_loss += float(loss.item())
             batches += 1

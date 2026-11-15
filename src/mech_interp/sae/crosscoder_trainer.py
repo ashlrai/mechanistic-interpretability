@@ -81,7 +81,7 @@ def train_crosscoder(
         dtype=activations_per_model[0].dtype,
     )
     crosscoder.to(device)
-    optimizer = torch.optim.Adam(crosscoder.parameters(), lr=learning_rate)  # type: ignore[arg-type]
+    optimizer = torch.optim.Adam(crosscoder.parameters(), lr=learning_rate)  # type: ignore[arg-type, unused-ignore]
 
     acts_detached = tuple(a.detach() for a in activations_per_model)
     history = TrainingHistory(
@@ -112,7 +112,7 @@ def train_crosscoder(
             for _mi in range(1, n_models):
                 loss = loss + torch.mean((batch[_mi] - recons[_mi]) ** 2)
             optimizer.zero_grad()
-            loss.backward()  # type: ignore[no-untyped-call]
+            loss.backward()  # type: ignore[no-untyped-call, unused-ignore]
             optimizer.step()
             epoch_loss += float(loss.item())
             batches += 1
