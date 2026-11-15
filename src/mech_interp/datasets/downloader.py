@@ -273,7 +273,7 @@ def _read_parquet_shard(
         repo_type="dataset",
         cache_dir=cache_dir,
     )
-    table = pq.read_table(local_path, columns=[text_field])  # type: ignore[no-untyped-call]
+    table = pq.read_table(local_path, columns=[text_field])  # type: ignore[no-untyped-call, unused-ignore]
     count = 0
     for batch in table.to_batches():
         col = batch.column(text_field)

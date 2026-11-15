@@ -40,7 +40,7 @@ def _make_fake_sae_lens() -> ModuleType:
         def from_dict(cls, d: dict[str, Any]) -> FakeSAEConfig:
             return cls(d)
 
-    class FakeSAE(nn.Module):
+    class FakeSAE(nn.Module):  # type: ignore[misc, unused-ignore]
         def __init__(self, cfg: FakeSAEConfig) -> None:
             super().__init__()
             self.cfg = cfg

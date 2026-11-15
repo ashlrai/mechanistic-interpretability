@@ -26,8 +26,8 @@ from typing import Any
 _HfApi: Any
 _hf_create_repo: Any
 try:
-    from huggingface_hub import HfApi as _HfApi
-    from huggingface_hub import create_repo as _hf_create_repo
+    from huggingface_hub import HfApi as _HfApi  # type: ignore[no-redef, unused-ignore]
+    from huggingface_hub import create_repo as _hf_create_repo  # type: ignore[no-redef, unused-ignore]
 except ImportError:  # pragma: no cover
     _HfApi = None
     _hf_create_repo = None

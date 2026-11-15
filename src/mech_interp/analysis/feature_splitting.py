@@ -254,7 +254,7 @@ def _load_decoder(path: Path) -> Any:
         try:
             from safetensors import safe_open
 
-            with safe_open(str(path), framework="pt", device="cpu") as f:  # type: ignore[no-untyped-call]
+            with safe_open(str(path), framework="pt", device="cpu") as f:  # type: ignore[no-untyped-call, unused-ignore]
                 # Key is "decoder.weight" with shape (d_model, n_features) — transpose
                 keys = list(f.keys())
                 decoder_key = next((k for k in keys if "decoder" in k and "weight" in k), None)

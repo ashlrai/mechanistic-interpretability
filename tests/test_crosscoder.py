@@ -10,7 +10,7 @@ import pytest
 torch = pytest.importorskip("torch", reason="torch not installed; run with --extra interp")
 
 if TYPE_CHECKING:
-    import torch  # noqa: F811
+    import torch  # type: ignore[no-redef, unused-ignore]  # noqa: F811
     from torch import Tensor
 
     from mech_interp.sae.crosscoder import Crosscoder

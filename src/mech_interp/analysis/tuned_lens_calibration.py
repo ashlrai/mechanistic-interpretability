@@ -73,7 +73,7 @@ def train_tuned_lens(
     inferred_device: str = device or str(next(model.parameters()).device)
 
     # Per-layer trainable affine transforms (init = identity + zero bias)
-    class _AffineTransform(nn.Module):
+    class _AffineTransform(nn.Module):  # type: ignore[misc, unused-ignore]
         def __init__(self, d: int) -> None:
             super().__init__()
             self.weight = nn.Parameter(torch.eye(d))
@@ -127,7 +127,7 @@ def train_tuned_lens(
                 log_probs_L: Any = torch.log_softmax(logits_L, dim=-1)
                 loss = loss + kl_loss(log_probs_L.unsqueeze(0), target_probs.unsqueeze(0))
 
-            loss.backward()  # type: ignore[no-untyped-call]
+            loss.backward()  # type: ignore[no-untyped-call, unused-ignore]
             optimizer.step()
             epoch_loss += float(loss.item())
 
@@ -136,7 +136,7 @@ def train_tuned_lens(
     # Return detached tensors
     result: dict[int, dict[str, Any]] = {}
     for L in range(n_layers - 1):
-        transform_L: _AffineTransform = transforms[L]  # type: ignore[assignment]
+        transform_L: _AffineTransform = transforms[L]  # type: ignore[assignment, unused-ignore]
         result[L] = {
             "weight": transform_L.weight.detach().cpu(),
             "bias": transform_L.bias.detach().cpu(),
